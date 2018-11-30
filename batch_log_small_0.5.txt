@@ -1,0 +1,22 @@
+CUDA=2
+-----------------
+small, 1, 0.5
+lstm_hid_dim=128
+nn_hid_dim=64
+pos_emb_dim=32
+expname=small_sz1_gm0.5
+CUDA_VISIBLE_DEVICES=2 python exp_myLSTM.py --elmo_option small --lstm_hid_dim 128 --nn_hid_dim 64 --pos_emb_dim 32 --step_size 5 --max_epoch 20 --gamma 0.5 --expname small_sz1_gm0.5> logs/small_sz1_gm0.5.txt
+-----------------
+small, 2, 0.5
+lstm_hid_dim=256
+nn_hid_dim=128
+pos_emb_dim=64
+expname=small_sz2_gm0.5
+CUDA_VISIBLE_DEVICES=2 python exp_myLSTM.py --elmo_option small --lstm_hid_dim 256 --nn_hid_dim 128 --pos_emb_dim 64 --step_size 5 --max_epoch 20 --gamma 0.5 --expname small_sz2_gm0.5> logs/small_sz2_gm0.5.txt
+-----------------
+small, 4, 0.5
+lstm_hid_dim=512
+nn_hid_dim=256
+pos_emb_dim=128
+expname=small_sz4_gm0.5
+CUDA_VISIBLE_DEVICES=2 python exp_myLSTM.py --elmo_option small --lstm_hid_dim 512 --nn_hid_dim 256 --pos_emb_dim 128 --step_size 5 --max_epoch 20 --gamma 0.5 --expname small_sz4_gm0.5> logs/small_sz4_gm0.5.txt
