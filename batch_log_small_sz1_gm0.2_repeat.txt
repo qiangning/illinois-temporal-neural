@@ -1,9 +1,0 @@
-Experiment Name small_sz1_gm0.2_repeat
-CUDA=1
------------------
-small, 1, 0.2
-lstm_hid_dim=128
-nn_hid_dim=64
-pos_emb_dim=32
-expname=small_sz1_gm0.2_repeat
-CUDA_VISIBLE_DEVICES=1 python exp_myLSTM.py --elmo_option small --lstm_hid_dim 128 --nn_hid_dim 64 --pos_emb_dim 32 --step_size 5 --max_epoch 20 --gamma 0.2 --expname small_sz1_gm0.2_repeat> logs/small_sz1_gm0.2_repeat.txt

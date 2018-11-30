@@ -68,6 +68,7 @@ class lstm_NN_baseline(nn.Module):
         self.lstm.reset_parameters()
         self.h_lstm2h_nn.reset_parameters()
         self.h_nn2o.reset_parameters()
+        # self.position_emb.reset_parameters()
     def init_hidden(self):
         if self.bidirectional:
             self.hidden = (torch.randn(2 * self.lstm.num_layers, self.batch_size, self.hidden_dim // 2),\

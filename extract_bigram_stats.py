@@ -10,6 +10,7 @@ import math
 import pickle as pkl
 from utils import *
 
+torch.set_default_tensor_type('torch.cuda.FloatTensor')
 
 class temporal_bigram:
     def __init__(self):
@@ -51,6 +52,28 @@ class temporal_bigram:
         if v1 not in self.bigram_rel_counts or v2 not in self.bigram_rel_counts[v1] or rel not in self.bigram_rel_counts[v1][v2]:
             return 0
         return self.bigram_rel_counts[v1][v2][rel]
+    def getBigramStatsFromTemprel(self,temprel,isGPU=True):
+        v1, v2 = "", ""
+        for i,position in enumerate(temprel.position):
+            if position == 'E1':
+                v1 = temprel.lemma[i]
+            if position == 'E2':
+                v2 = temprel.lemma[i]
+                break
+        ret = []
+        if self.getBigramCounts(v1,v2)>0:
+            ret.append(1.0 * self.getBigramRelCounts(v1, v2, 'before') / self.getBigramCounts(v1, v2))
+        else:
+            ret.append(0)
+        if self.getBigramCounts(v2,v1)>0:
+            ret.append(1.0 * self.getBigramRelCounts(v2, v1, 'before') / self.getBigramCounts(v2, v1))
+        else:
+            ret.append(0)
+        if isGPU:
+            return torch.cuda.FloatTensor(ret).view(1,-1)
+        else:
+            return ret
+
     def snapshot(self,pairs2monitor=None):
         print("-------------temporal_bigram: basic stats-------------",flush=True)
         print("Length of vocab: %d" % len(self.vocab),flush=True)
@@ -101,19 +124,27 @@ class event:
         self.idx = idx
 def isPBefore(event1,event2):
     return event1.idx < event2.idx
-tBigram = temporal_bigram()
-start = time.time()
 
-if __name__ == '__main__':
+def extractFromTemprob():
+    tBigram = temporal_bigram()
+    start = time.time()
+    PAIRS_MONITOR = {('die', 'explode'), ('attack', 'die'), ('ask', 'help'), ('chop', 'taste'), ('concern', 'protect'), \
+                     ('conspire', 'kill'), ('debate', 'vote'), ('dedicate', 'promote'), ('fight', 'overthrow'), \
+                     ('achieve', 'desire'), ('admire', 'respect'), ('clean', 'contaminate'), ('defend', 'accuse'), \
+                     ('die', 'crash'), ('overthrow', 'elect')}
+    TEMPROB_DIRECTORY = "/shared/preprocessed/qning2/temporal/temporalLM/sent1results.txt"
 
+def extractFromTimelines():
+    tBigram = temporal_bigram()
+    start = time.time()
     MAX_FILES = 2000000
     REPORT_STEP = 100000
     WINDOW = 3
     MIN_LEN_TIMELINE = 5
-    PAIRS_MONITOR = {('die','explode'),('attack','die'),('ask','help'),('chop','taste'),('concern','protect'),\
-                     ('conspire','kill'),('debate','vote'),('dedicate','promote'),('fight','overthrow'),\
-                     ('achieve','desire'),('admire','respect'),('clean','contaminate'),('defend','accuse'),\
-                     ('die','crash'),('overthrow','elect')}
+    PAIRS_MONITOR = {('die', 'explode'), ('attack', 'die'), ('ask', 'help'), ('chop', 'taste'), ('concern', 'protect'), \
+                     ('conspire', 'kill'), ('debate', 'vote'), ('dedicate', 'promote'), ('fight', 'overthrow'), \
+                     ('achieve', 'desire'), ('admire', 'respect'), ('clean', 'contaminate'), ('defend', 'accuse'), \
+                     ('die', 'crash'), ('overthrow', 'elect')}
 
     # INPUT_DIRECTORY = "/home/qning2/Servers/root/shared/preprocessed/sssubra2/annotated-nyt-temporal/extracted"
     INPUT_DIRECTORY = "/shared/preprocessed/sssubra2/annotated-nyt-temporal/extracted"
@@ -122,7 +153,7 @@ if __name__ == '__main__':
         for fname in files:
             if fname.startswith('._'):
                 continue
-            infile = os.path.join(root,fname)
+            infile = os.path.join(root, fname)
             events = []
             try:
                 lines = open(infile, 'r').readlines()
@@ -133,34 +164,35 @@ if __name__ == '__main__':
                 if not line.startswith('E'):
                     continue
                 line = line.strip().split("/")
-                lemma = line[-2] # verb lemma
+                lemma = line[-2]  # verb lemma
                 idx = int(line[0][1:])
-                events.append(event(lemma,idx))
+                events.append(event(lemma, idx))
             if len(events) < MIN_LEN_TIMELINE:
                 continue
-            N_FILES+=1
+            N_FILES += 1
             for i, e1 in enumerate(events):
-                for j in range(max(0,i-WINDOW),min(i+WINDOW+1,len(events))):
+                for j in range(max(0, i - WINDOW), min(i + WINDOW + 1, len(events))):
                     if i == j:
                         continue
                     e2 = events[j]
-                    if isPBefore(e1,e2): # Text: e1...e2
-                        if i < j: # Time: e1...e2
-                            tBigram.addOneRelation(e1.lemma,e2.lemma,'before')
-                        else: # Time: e2...e1
-                            tBigram.addOneRelation(e1.lemma,e2.lemma,'after')
-                    else: # Text: e2...e1
-                        if i < j: # Time: e1...e2
-                            tBigram.addOneRelation(e2.lemma,e1.lemma,'after')
-                        else: # Time: e2...e1
-                            tBigram.addOneRelation(e2.lemma,e1.lemma,'before')
-            if(N_FILES % REPORT_STEP == 0):
-                print("%d files have been processed (%s)" % (N_FILES,timeSince(start)),flush=True)
+                    if isPBefore(e1, e2):  # Text: e1...e2
+                        if i < j:  # Time: e1...e2
+                            tBigram.addOneRelation(e1.lemma, e2.lemma, 'before')
+                        else:  # Time: e2...e1
+                            tBigram.addOneRelation(e1.lemma, e2.lemma, 'after')
+                    else:  # Text: e2...e1
+                        if i < j:  # Time: e1...e2
+                            tBigram.addOneRelation(e2.lemma, e1.lemma, 'after')
+                        else:  # Time: e2...e1
+                            tBigram.addOneRelation(e2.lemma, e1.lemma, 'before')
+            if (N_FILES % REPORT_STEP == 0):
+                print("%d files have been processed (%s)" % (N_FILES, timeSince(start)), flush=True)
                 tBigram.snapshot(PAIRS_MONITOR)
                 tBigram.save('temporal_bigram_stats.pkl')
-            if(N_FILES>MAX_FILES):
+            if (N_FILES > MAX_FILES):
                 break
-        if(N_FILES>MAX_FILES):
+        if (N_FILES > MAX_FILES):
             break
 
-
+if __name__ == '__main__':
+    extractFromTimelines()

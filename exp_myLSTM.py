@@ -6,18 +6,20 @@ matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import random
 import numpy as np
+import torch
 import torch.optim as optim
 from sklearn.model_selection import train_test_split
+torch.set_default_tensor_type('torch.cuda.FloatTensor')
+from utils import *
+seed_everything(13234)
 
 from ELMo_Cache import *
 from TemporalDataSet import *
 from LemmaEmbeddings import *
 from myLSTM import *
 from Baseline_LSTM import *
-from utils import *
+from extract_bigram_stats import temporal_bigram
 
-torch.set_default_tensor_type('torch.cuda.FloatTensor')
-seed_everything(13234)
 
 class experiment:
     def __init__(self,model,trainset,testset,output_labels,params,exp_name,modelPath):
@@ -166,13 +168,25 @@ def run(elmo_option,lstm_hid_dim,nn_hid_dim,pos_emb_dim,lr,weight_decay,step_siz
                   'lstm_hidden_dim':lstm_hid_dim,\
                   'nn_hidden_dim':nn_hid_dim,\
                   'position_emb_dim':pos_emb_dim,\
+                  'bigramStats_dim':2,\
+                  'lemma_emb_dim':200,\
                   'batch_size':1}
     params_optim = {'lr':lr,'weight_decay':weight_decay,'step_size':step_size,'gamma':gamma,'max_epoch':max_epoch}
     print("___________________HYPER-PARAMETERS:LSTM___________________")
     print(params)
     print("___________________HYPER-PARAMETERS:OPTIMIZER___________________")
     print(params_optim)
-    model = lstm_NN_baseline(params, emb_cache, position2ix)
+    # Baseline: without bigram stats
+    # model = lstm_NN_baseline(params, emb_cache, position2ix)
+
+    # Proposed: with bigram stats from timelines only
+    bigramGetter=pkl.load(open("/shared/preprocessed/qning2/temporal/TimeLines/temporal_bigram_stats.pkl",'rb'))
+    model = lstm_NN_bigramStats(params, emb_cache, bigramGetter, position2ix)
+
+    # Proposed: with embeddings from temprob
+    # lemma_emb_cache = lemmaEmbeddings('ser/embeddings_0.3_200_1_temprob.pkl')
+    # model = lstm_NN_embeddings(params, emb_cache, lemma_emb_cache, position2ix)
+
     exp = experiment(model=model,trainset=trainset.temprel_ee,testset=testset.temprel_ee,\
                      params=params_optim,exp_name=expname,modelPath="models/ckpt", \
                      output_labels=output_labels)
