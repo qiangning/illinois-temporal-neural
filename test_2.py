@@ -2,6 +2,9 @@
 # In[1]:
 
 import matplotlib
+
+from myLSTM import lstm_NN_position_embedding
+
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 from random import shuffle
@@ -73,7 +76,7 @@ batch_size = 1
 position2ix = {"B":0,"M":1,"A":2,"E1":3,"E2":4}
 
 # model = lstm_baseline(embedding_dim, lstm_hidden_dim, position_emb_dim, emb_cache, output_dim, batch_size, position2ix)
-model = lstm_NN_baseline(embedding_dim, lstm_hidden_dim, nn_hidden_dim, position_emb_dim, emb_cache, output_dim, batch_size, position2ix)
+model = lstm_NN_position_embedding(embedding_dim, lstm_hidden_dim, nn_hidden_dim, position_emb_dim, emb_cache, output_dim, batch_size, position2ix)
 optimizer = optim.SGD(model.parameters(), lr=0.1, weight_decay=1e-4)
 scheduler = optim.lr_scheduler.StepLR(optimizer,step_size=10, gamma=0.3)
 

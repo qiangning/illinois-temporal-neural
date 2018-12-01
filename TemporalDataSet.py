@@ -11,10 +11,15 @@ class temprel_ee:
         self.part_of_speech = []
         self.position = []
         self.length = len(self.data)
-        for d in self.data:
+        self.event_ix = []
+        for i,d in enumerate(self.data):
             tmp = d.split('///')
             self.part_of_speech.append(tmp[-2])
             self.position.append(tmp[-1])
+            if tmp[-1] == 'E1':
+                self.event_ix.append(i)
+            elif tmp[-1] == 'E2':
+                self.event_ix.append(i)
             # self.token.append(d[:-(len(tmp[-1])+len(tmp[-2])+2)])
             self.token.append(tmp[0])
             self.lemma.append(tmp[1])

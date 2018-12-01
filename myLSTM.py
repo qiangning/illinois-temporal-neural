@@ -4,6 +4,57 @@ import torch.nn.functional as F
 
 torch.set_default_tensor_type('torch.cuda.FloatTensor')
 
+class lstm_NN_position_embedding(nn.Module):
+    def __init__(self, params,emb_cache,position2ix,bidirectional=False):
+        super(lstm_NN_position_embedding, self).__init__()
+        self.params = params
+        self.embedding_dim = params.get('embedding_dim')
+        self.lstm_hidden_dim = params.get('lstm_hidden_dim',64)
+        self.nn_hidden_dim = params.get('nn_hidden_dim',32)
+        self.position_emb_dim = params.get('position_emb_dim',16)
+        self.emb_cache = emb_cache
+        self.output_dim = params.get('output_dim',4)
+        self.batch_size = params.get('batch_size',1)
+        self.position2ix = position2ix
+        self.position_emb = nn.Embedding(len(position2ix), self.position_emb_dim)
+        self.bidirectional = bidirectional
+        if self.bidirectional:
+            self.lstm = nn.LSTM(self.embedding_dim + self.position_emb_dim, self.lstm_hidden_dim // 2,\
+                                num_layers=1, bidirectional=True)
+        else:
+            self.lstm = nn.LSTM(self.embedding_dim + self.position_emb_dim, self.lstm_hidden_dim,\
+                                num_layers=1, bidirectional=False)
+        self.h_lstm2h_nn = nn.Linear(self.lstm_hidden_dim, self.nn_hidden_dim)
+        self.h_nn2o = nn.Linear(self.nn_hidden_dim, self.output_dim)
+        self.init_hidden()
+    def reset_parameters(self):
+        self.lstm.reset_parameters()
+        self.h_lstm2h_nn.reset_parameters()
+        self.h_nn2o.reset_parameters()
+        # self.position_emb.reset_parameters()
+    def init_hidden(self):
+        if self.bidirectional:
+            self.hidden = (torch.randn(2 * self.lstm.num_layers, self.batch_size, self.hidden_dim // 2),\
+                           torch.randn(2 * self.lstm.num_layers, self.batch_size, self.hidden_dim // 2))
+        else:
+            self.hidden = (torch.randn(1 * self.lstm.num_layers, self.batch_size, self.lstm_hidden_dim),\
+                           torch.randn(1 * self.lstm.num_layers, self.batch_size, self.lstm_hidden_dim))
+
+    def temprel2embeddingSeq(self, temprel):
+        embeddings = self.emb_cache.retrieveEmbeddings(tokList=temprel.token).cuda()
+        position_emb = self.position_emb(torch.cuda.LongTensor([self.position2ix[t] for t in temprel.position]))
+        return torch.cat((embeddings, position_emb), 1).view(temprel.length, self.batch_size, -1)
+
+    def forward(self, temprel):
+        self.init_hidden()
+        embeds = self.temprel2embeddingSeq(temprel)
+        lstm_out, self.hidden = self.lstm(embeds, self.hidden)
+        lstm_out = lstm_out.view(embeds.size()[0], self.batch_size, self.lstm_hidden_dim)
+        lstm_out = lstm_out[-1][:][:]
+        h_nn = F.relu(self.h_lstm2h_nn(lstm_out))
+        output = self.h_nn2o(h_nn)
+        return output
+
 class lstm_NN_bigramStats(nn.Module):
     def __init__(self, params,emb_cache,bigramGetter,position2ix,bidirectional=False):
         super(lstm_NN_bigramStats, self).__init__()
@@ -27,7 +78,7 @@ class lstm_NN_bigramStats(nn.Module):
             self.lstm = nn.LSTM(self.embedding_dim + self.position_emb_dim, self.lstm_hidden_dim,\
                                 num_layers=1, bidirectional=False)
         self.h_lstm2h_nn = nn.Linear(self.lstm_hidden_dim+self.bigramStats_dim, self.nn_hidden_dim)
-        self.h_nn2o = nn.Linear(self.nn_hidden_dim, self.output_dim)
+        self.h_nn2o = nn.Linear(self.nn_hidden_dim+self.bigramStats_dim, self.output_dim)
         self.init_hidden()
     def reset_parameters(self):
         self.lstm.reset_parameters()
@@ -55,7 +106,7 @@ class lstm_NN_bigramStats(nn.Module):
         lstm_out = lstm_out[-1][:][:]
         bigramstats = self.bigramGetter.getBigramStatsFromTemprel(temprel)
         h_nn = F.relu(self.h_lstm2h_nn(torch.cat((lstm_out,bigramstats), 1)))
-        output = self.h_nn2o(h_nn)
+        output = self.h_nn2o(torch.cat((h_nn,bigramstats),1))
         return output
 
 class lstm_NN_embeddings(nn.Module):
@@ -75,8 +126,8 @@ class lstm_NN_embeddings(nn.Module):
         self.position_emb = nn.Embedding(len(position2ix), self.position_emb_dim)
         self.lstm = nn.LSTM(self.embedding_dim + self.position_emb_dim, self.lstm_hidden_dim,
                             num_layers=1, bidirectional=False)
-        self.h_lstm2h_nn = nn.Linear(self.lstm_hidden_dim+2*self.lemma_emb_dim, self.nn_hidden_dim)
-        self.h_nn2o = nn.Linear(self.nn_hidden_dim, self.output_dim)
+        self.h_lstm2h_nn = nn.Linear(self.lstm_hidden_dim, self.nn_hidden_dim)
+        self.h_nn2o = nn.Linear(self.nn_hidden_dim+self.lemma_emb_dim, self.output_dim)
         self.init_hidden()
     def reset_parameters(self):
         self.lstm.reset_parameters()
@@ -98,14 +149,20 @@ class lstm_NN_embeddings(nn.Module):
         lstm_out, self.hidden = self.lstm(embeds, self.hidden)
         lstm_out = lstm_out.view(embeds.size()[0], self.batch_size, self.lstm_hidden_dim)
         lstm_out = lstm_out[-1][:][:]
-        E1_lemma_emb = self.lemma_emb_cache.retrieveEmbeddings()
-        E2_lemma_emb = self.lemma_emb_cache.retrieveEmbeddings()
-        for i in range(temprel.length):
-            position = temprel.position[i]
-            if position == 'E1':
-                E1_lemma_emb = self.lemma_emb_cache.retrieveEmbeddings(temprel.lemma[i])
-            elif position == 'E2':
-                E2_lemma_emb = self.lemma_emb_cache.retrieveEmbeddings(temprel.lemma[i])
-        h_nn = F.relu(self.h_lstm2h_nn(torch.cat((lstm_out,E1_lemma_emb,E2_lemma_emb),1)))
-        output = self.h_nn2o(h_nn)
+        # E1_lemma_emb = self.lemma_emb_cache.retrieveEmbeddings()
+        # E2_lemma_emb = self.lemma_emb_cache.retrieveEmbeddings()
+        # for i in range(temprel.length):
+        #     position = temprel.position[i]
+        #     if position == 'E1':
+        #         E1_lemma_emb = self.lemma_emb_cache.retrieveEmbeddings(temprel.lemma[i])
+        #     elif position == 'E2':
+        #         E2_lemma_emb = self.lemma_emb_cache.retrieveEmbeddings(temprel.lemma[i])
+
+        # concat lemma_embeddings to lstm output
+        # h_nn = F.relu(self.h_lstm2h_nn(torch.cat((lstm_out,self.lemma_emb_cache.retrieveEmbeddings(temprel)),1)))
+        # output = self.h_nn2o(h_nn)
+
+        # concat lemma_embeddings to the final layer before output
+        h_nn = F.relu(self.h_lstm2h_nn(lstm_out))
+        output = self.h_nn2o(torch.cat((h_nn,self.lemma_emb_cache.retrieveEmbeddings(temprel)),1))
         return output

@@ -10,7 +10,7 @@ import math
 import pickle as pkl
 from utils import *
 
-torch.set_default_tensor_type('torch.cuda.FloatTensor')
+# torch.set_default_tensor_type('torch.cuda.FloatTensor')
 
 class temporal_bigram:
     def __init__(self):
@@ -28,7 +28,7 @@ class temporal_bigram:
     def addRelation(self,rel):
         if rel not in self.relationSet:
             self.relationSet.add(rel)
-    def addOneRelation(self,v1,v2,rel):
+    def addOneRelation(self,v1,v2,rel,cnt=1):
         self.addWord(v1)
         self.addWord(v2)
         self.addRelation(rel)
@@ -41,9 +41,9 @@ class temporal_bigram:
             self.total_bigrams += 1
         if rel not in self.bigram_rel_counts[v1][v2]:
             self.bigram_rel_counts[v1][v2][rel] = 0
-        self.bigram_rel_counts[v1][v2][rel] += 1
-        self.bigram_counts[v1][v2] += 1
-        self.total_counts += 1
+        self.bigram_rel_counts[v1][v2][rel] += cnt
+        self.bigram_counts[v1][v2] += cnt
+        self.total_counts += cnt
     def getBigramCounts(self,v1,v2):
         if v1 not in self.bigram_counts or v2 not in self.bigram_counts[v1]:
             return 0
@@ -127,12 +127,29 @@ def isPBefore(event1,event2):
 
 def extractFromTemprob():
     tBigram = temporal_bigram()
-    start = time.time()
     PAIRS_MONITOR = {('die', 'explode'), ('attack', 'die'), ('ask', 'help'), ('chop', 'taste'), ('concern', 'protect'), \
                      ('conspire', 'kill'), ('debate', 'vote'), ('dedicate', 'promote'), ('fight', 'overthrow'), \
                      ('achieve', 'desire'), ('admire', 'respect'), ('clean', 'contaminate'), ('defend', 'accuse'), \
                      ('die', 'crash'), ('overthrow', 'elect')}
-    TEMPROB_DIRECTORY = "/shared/preprocessed/qning2/temporal/temporalLM/sent1results.txt"
+    TEMPROB_DIRECTORY = "/home/qning2/Servers/root/shared/preprocessed/qning2/temporal/temporalLM/sent1results.txt"
+    f=open(TEMPROB_DIRECTORY,'r')
+    lines = f.readlines()
+    print("lines:%d" %len(lines))
+    cnt = 0
+    for line in lines:
+        # cnt += 1
+        # if cnt > 20:
+        #     break
+        tmp = line.split()
+        if len(tmp)!=4:
+            continue
+        if tmp[2] != 'before' and tmp[2] != 'after':
+            continue
+        v1 = tmp[0][:-3]
+        v2 = tmp[1][:-3]
+        tBigram.addOneRelation(v1,v2,tmp[2],int(tmp[3]))
+    tBigram.snapshot(PAIRS_MONITOR)
+    tBigram.save('/home/qning2/Servers/root/shared/preprocessed/qning2/temporal/TemProb/temporal_bigram_stats.pkl')
 
 def extractFromTimelines():
     tBigram = temporal_bigram()
@@ -195,4 +212,4 @@ def extractFromTimelines():
             break
 
 if __name__ == '__main__':
-    extractFromTimelines()
+    extractFromTemprob()
