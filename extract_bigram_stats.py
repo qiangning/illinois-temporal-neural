@@ -150,7 +150,31 @@ def extractFromTemprob():
         tBigram.addOneRelation(v1,v2,tmp[2],int(tmp[3]))
     tBigram.snapshot(PAIRS_MONITOR)
     tBigram.save('/home/qning2/Servers/root/shared/preprocessed/qning2/temporal/TemProb/temporal_bigram_stats.pkl')
-
+def extractFromTimelines_new():
+    tBigram = temporal_bigram()
+    PAIRS_MONITOR = {('die', 'explode'), ('attack', 'die'), ('ask', 'help'), ('chop', 'taste'), ('concern', 'protect'), \
+                     ('conspire', 'kill'), ('debate', 'vote'), ('dedicate', 'promote'), ('fight', 'overthrow'), \
+                     ('achieve', 'desire'), ('admire', 'respect'), ('clean', 'contaminate'), ('defend', 'accuse'), \
+                     ('die', 'crash'), ('overthrow', 'elect')}
+    TEMPROB_DIRECTORY = "/home/qning2/Servers/root/shared/preprocessed/qning2/temporal/TempRels-CogCompTime/combined.stats"
+    f = open(TEMPROB_DIRECTORY, 'r')
+    lines = f.readlines()
+    print("lines:%d" % len(lines))
+    cnt = 0
+    for line in lines:
+        # cnt += 1
+        # if cnt > 20:
+        #     break
+        tmp = line.split(',')
+        if len(tmp) != 6:
+            continue
+        if tmp[2].lower() != 'before' and tmp[2].lower() != 'after':
+            continue
+        v1 = tmp[0]
+        v2 = tmp[1]
+        tBigram.addOneRelation(v1, v2, tmp[2].lower(), int(tmp[3]))
+    tBigram.snapshot(PAIRS_MONITOR)
+    tBigram.save('/home/qning2/Servers/root/shared/preprocessed/qning2/temporal/TimeLines/temporal_bigram_stats_new_samesent.pkl')
 def extractFromTimelines():
     tBigram = temporal_bigram()
     start = time.time()
@@ -212,4 +236,4 @@ def extractFromTimelines():
             break
 
 if __name__ == '__main__':
-    extractFromTemprob()
+    extractFromTimelines_new()

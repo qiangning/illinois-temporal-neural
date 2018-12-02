@@ -16,13 +16,13 @@ from utils import *
 seed_everything(13234)
 
 from ELMo_Cache import *
+from WordEmbeddings_Cache import *
 from TemporalDataSet import *
 from LemmaEmbeddings import *
 from myLSTM import *
 from Baseline_LSTM import *
 from extract_bigram_stats import temporal_bigram
 from pairwise_ffnn_pytorch import VerbNet
-
 
 class experiment:
     def __init__(self,model,trainset,testset,output_labels,params,exp_name,modelPath,skiptuning):
@@ -176,7 +176,7 @@ class bigramGetter_fromNN:
         return self.model.retrieveEmbeddings(torch.from_numpy(np.array([[self.verb_i_map[v1],self.verb_i_map[v2]]])).cuda()).view(1,-1)
 
 @click.command()
-@click.option("--elmo_option",default='medium')
+@click.option("--w2v_option",default=2)
 @click.option("--lstm_hid_dim",default=128)
 @click.option("--nn_hid_dim",default=64)
 @click.option("--pos_emb_dim",default=32)
@@ -188,22 +188,43 @@ class bigramGetter_fromNN:
 @click.option("--expname",default="test")
 @click.option("--skiptuning", is_flag=True)
 @click.option("--mode",default=0)
-def run(elmo_option,lstm_hid_dim,nn_hid_dim,pos_emb_dim,lr,weight_decay,step_size,gamma,max_epoch,expname,skiptuning,mode):
+def run(w2v_option,lstm_hid_dim,nn_hid_dim,pos_emb_dim,lr,weight_decay,step_size,gamma,max_epoch,expname,skiptuning,mode):
 
     trainset = temprel_set("data/Output4LSTM_Baseline/trainset.xml")
     testset = temprel_set("data/Output4LSTM_Baseline/testset.xml")
 
-    if elmo_option == 'small':
+    if w2v_option == 0:
         embedding_dim = 256
-    elif elmo_option == 'medium':
+        print("Using ELMo (small)")
+        emb_cache = elmo_cache(None, "ser/elmo_cache_small.pkl", verbose=False)
+    elif w2v_option == 1:
         embedding_dim = 512
-    elif elmo_option == 'original':
+        print("Using ELMo (medium)")
+        emb_cache = elmo_cache(None, "ser/elmo_cache_medium.pkl", verbose=False)
+    elif w2v_option == 2:
         embedding_dim = 1024
+        print("Using ELMo (original)")
+        emb_cache = elmo_cache(None, "ser/elmo_cache_original.pkl", verbose=False)
+    elif w2v_option == 3:
+        embedding_dim = 300
+        print("glove.6B.300d-light.magnitude")
+        emb_cache = w2v_cache(None, "ser/w2v_cache_glove.6B.300d-light.magnitude.pkl", verbose=False)
+    elif w2v_option == 4:
+        embedding_dim = 300
+        print("glove.6B.300d-medium.magnitude")
+        emb_cache = w2v_cache(None, "ser/w2v_cache_glove.6B.300d-medium.magnitude.pkl", verbose=False)
+    elif w2v_option == 5:
+        embedding_dim = 300
+        print("wiki-news-300d-1M-medium.magnitude")
+        emb_cache = w2v_cache(None, "ser/w2v_cache_wiki-news-300d-1M-medium.magnitude.pkl", verbose=False)
+    elif w2v_option == 6:
+        embedding_dim = 300
+        print("GoogleNews-vectors-negative300-medium.magnitude")
+        emb_cache = w2v_cache(None, "ser/w2v_cache_GoogleNews-vectors-negative300-medium.magnitude.pkl", verbose=False)
     else:
-        print("elmo option is wrong (%s). has to be small/medium/original" % elmo_option)
-        elmo_option = 'small'
+        print("word embedding option is wrong (%d)." % w2v_option)
         embedding_dim = 256
-    emb_cache = elmo_cache(None,"ser/elmo_cache_%s.pkl"%elmo_option,verbose=False)
+        emb_cache = elmo_cache(None, "ser/elmo_cache_small.pkl", verbose=False)
 
     position2ix = {"B":0,"M":1,"A":2,"E1":3,"E2":4}
     output_labels = {"BEFORE":0,"AFTER":1,"EQUAL":2,"VAGUE":3}
@@ -230,7 +251,7 @@ def run(elmo_option,lstm_hid_dim,nn_hid_dim,pos_emb_dim,lr,weight_decay,step_siz
         bigramGetter = pkl.load(open("/shared/preprocessed/qning2/temporal/TemProb/temporal_bigram_stats.pkl", 'rb'))
         model = lstm_NN_bigramStats(params, emb_cache, bigramGetter, position2ix)
     elif mode == 2: # Proposed: pairwise, timelines, raw stats
-        bigramGetter=pkl.load(open("/shared/preprocessed/qning2/temporal/TimeLines/temporal_bigram_stats.pkl",'rb'))
+        bigramGetter=pkl.load(open("/shared/preprocessed/qning2/temporal/TimeLines/temporal_bigram_stats_new_samesent.pkl",'rb'))
         model = lstm_NN_bigramStats(params, emb_cache, bigramGetter, position2ix)
     elif mode == 3: # Proposed: pairwise, temprob, nn fitted stats
         ratio = 0.3
@@ -262,7 +283,10 @@ def run(elmo_option,lstm_hid_dim,nn_hid_dim,pos_emb_dim,lr,weight_decay,step_siz
             ratio, emb_size, layer)
         mdl_path = '/shared/preprocessed/sssubra2/embeddings/models/TemProb/pairwise_model_%.1f_%d_%d.pt' % (
             ratio, emb_size, layer)
-        params['lemma_emb_dim'] = int(emb_size*2*ratio)
+        if layer==1:
+            params['lemma_emb_dim'] = int(emb_size*2*ratio)
+        elif layer == 2:
+            params['lemma_emb_dim'] = int(emb_size*2*ratio)+int(emb_size*ratio)
         print("ratio=%s,emb_size=%d,layer=%d,lemma_emb_dim=%d" %(str(ratio),emb_size,layer,params['lemma_emb_dim']))
         bigramGetter = bigramGetter_fromNN(emb_path, mdl_path, ratio, layer, emb_size,splitter=',')
         model = lstm_NN_embeddings(params, emb_cache, bigramGetter, position2ix)
@@ -275,10 +299,29 @@ def run(elmo_option,lstm_hid_dim,nn_hid_dim,pos_emb_dim,lr,weight_decay,step_siz
             ratio, emb_size, layer)
         mdl_path = '/shared/preprocessed/sssubra2/embeddings/models/Timelines/pairwise_model_%.1f_%d_%d.pt' % (
             ratio, emb_size, layer)
-        params['lemma_emb_dim'] = int(emb_size * 2 * ratio)
+        if layer==1:
+            params['lemma_emb_dim'] = int(emb_size*2*ratio)
+        elif layer == 2:
+            params['lemma_emb_dim'] = int(emb_size*2*ratio)+int(emb_size*ratio)
         print("ratio=%s,emb_size=%d,layer=%d,lemma_emb_dim=%d" % (str(ratio), emb_size, layer, params['lemma_emb_dim']))
         bigramGetter = bigramGetter_fromNN(emb_path, mdl_path, ratio, layer, emb_size,splitter=' ')
         model = lstm_NN_embeddings(params, emb_cache, bigramGetter, position2ix)
+    elif mode == 7: # Proposed: with embeddings from temprob but put one extra layer after embeddings before concat with the final layer of output
+        ratio = 0.3
+        emb_size = 200
+        layer = 1
+        print("---------")
+        emb_path = '/shared/preprocessed/sssubra2/embeddings/models/TemProb/embeddings_%.1f_%d_%d_temprob.txt' % (
+            ratio, emb_size, layer)
+        mdl_path = '/shared/preprocessed/sssubra2/embeddings/models/TemProb/pairwise_model_%.1f_%d_%d.pt' % (
+            ratio, emb_size, layer)
+        if layer==1:
+            params['lemma_emb_dim'] = int(emb_size*2*ratio)
+        elif layer == 2:
+            params['lemma_emb_dim'] = int(emb_size*2*ratio)+int(emb_size*ratio)
+        print("ratio=%s,emb_size=%d,layer=%d,lemma_emb_dim=%d" %(str(ratio),emb_size,layer,params['lemma_emb_dim']))
+        bigramGetter = bigramGetter_fromNN(emb_path, mdl_path, ratio, layer, emb_size,splitter=',')
+        model = lstm_NN_embeddings2(params, emb_cache, bigramGetter, position2ix)
     else:
         print('Error! No such mode: %d' %mode)
         sys.exit(-1)
