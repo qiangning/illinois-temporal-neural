@@ -61,6 +61,7 @@ class experiment:
         self.trainHelper(trainset_aug,self.testset,self.best_epoch+1,"retrain")
 
     def trainHelper(self,trainset,testset,max_epoch,tag):
+        self.model.train()
         lr = self.params.get('lr',0.1)
         weight_decay = self.params.get('weight_decay',1e-4)
         step_size = self.params.get('step_size',10)
@@ -128,10 +129,14 @@ class experiment:
 
 
     def eval(self,eval_on_set):
+        was_training = self.model.training
+        self.model.eval()
         confusion = np.zeros((len(self.output_labels), len(self.output_labels)), dtype=int)
         for ex in eval_on_set:
             output = self.model(ex)
             confusion[self.output_labels[ex.label]][categoryFromOutput(output)] += 1
+        if was_training:
+            self.model.train()
         return 1.0 * np.sum([confusion[i][i] for i in range(4)]) / np.sum(confusion), confusion
 
     def load_model(self,modelLoadPath):
