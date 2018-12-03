@@ -327,6 +327,34 @@ def run(w2v_option,lstm_hid_dim,nn_hid_dim,pos_emb_dim,lr,weight_decay,step_size
         print("ratio=%s,emb_size=%d,layer=%d,lemma_emb_dim=%d" %(str(ratio),emb_size,layer,params['lemma_emb_dim']))
         bigramGetter = bigramGetter_fromNN(emb_path, mdl_path, ratio, layer, emb_size,splitter=',')
         model = lstm_NN_embeddings2(params, emb_cache, bigramGetter, position2ix)
+    elif mode == 8: # mode=7 with dropout for common sense embeddings
+        ratio = 0.3
+        emb_size = 200
+        layer = 1
+        print("---------")
+        emb_path = '/shared/preprocessed/sssubra2/embeddings/models/TemProb/embeddings_%.1f_%d_%d_temprob.txt' % (
+            ratio, emb_size, layer)
+        mdl_path = '/shared/preprocessed/sssubra2/embeddings/models/TemProb/pairwise_model_%.1f_%d_%d.pt' % (
+            ratio, emb_size, layer)
+        if layer == 1:
+            params['lemma_emb_dim'] = int(emb_size * 2 * ratio)
+        elif layer == 2:
+            params['lemma_emb_dim'] = int(emb_size * 2 * ratio) + int(emb_size * ratio)
+        print("ratio=%s,emb_size=%d,layer=%d,lemma_emb_dim=%d" % (str(ratio), emb_size, layer, params['lemma_emb_dim']))
+        bigramGetter = bigramGetter_fromNN(emb_path, mdl_path, ratio, layer, emb_size, splitter=',')
+        model = lstm_NN_embeddings3(params, emb_cache, bigramGetter, position2ix)
+    elif mode == 9:  # Proposed: pairwise, temprob, raw stats==>categorical common sense embedding
+        bigramGetter = pkl.load(open("/shared/preprocessed/qning2/temporal/TemProb/temporal_bigram_stats.pkl", 'rb'))
+        model = lstm_NN_bigramStats2(params, emb_cache, bigramGetter, position2ix, granularity=0.1, common_sense_emb_dim=64)
+    elif mode == 10: # mode 1 + mode 5
+        bigramGetter = pkl.load(open("/shared/preprocessed/qning2/temporal/TemProb/temporal_bigram_stats.pkl", 'rb'))
+        model = lstm_NN_bigramStats3(params, emb_cache, bigramGetter, position2ix, granularity=0.1, common_sense_emb_dim=64)
+    elif mode == 11:
+        bigramGetter = pkl.load(open("/shared/preprocessed/qning2/temporal/TemProb/temporal_bigram_stats.pkl", 'rb'))
+        model = lstm_NN_bigramStats4(params, emb_cache, bigramGetter, position2ix, granularity=0.1, common_sense_emb_dim=64)
+    elif mode == 12:
+        bigramGetter = pkl.load(open("/shared/preprocessed/qning2/temporal/TemProb/temporal_bigram_stats.pkl", 'rb'))
+        model = lstm_NN_bigramStats5(params, emb_cache, bigramGetter, position2ix, granularity=0.1, common_sense_emb_dim=64)
     else:
         print('Error! No such mode: %d' %mode)
         sys.exit(-1)
@@ -335,7 +363,7 @@ def run(w2v_option,lstm_hid_dim,nn_hid_dim,pos_emb_dim,lr,weight_decay,step_size
                      output_labels=output_labels,skiptuning=skiptuning)
     exp.train()
     test_acc, test_confusion = exp.eval(testset.temprel_ee)
-    print("TEST ACCURACY=%.2f" % test_acc)
+    print("TEST ACCURACY=%.4f" % test_acc)
     print("CONFUSION MAT:")
     print(test_confusion)
 

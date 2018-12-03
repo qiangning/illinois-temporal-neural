@@ -61,11 +61,11 @@ class temporal_bigram:
                 v2 = temprel.lemma[i]
                 break
         ret = []
-        if self.getBigramCounts(v1,v2)>0:
+        if self.getBigramCounts(v1,v2)>10:
             ret.append(1.0 * self.getBigramRelCounts(v1, v2, 'before') / self.getBigramCounts(v1, v2))
         else:
             ret.append(0)
-        if self.getBigramCounts(v2,v1)>0:
+        if self.getBigramCounts(v2,v1)>10:
             ret.append(1.0 * self.getBigramRelCounts(v2, v1, 'before') / self.getBigramCounts(v2, v1))
         else:
             ret.append(0)

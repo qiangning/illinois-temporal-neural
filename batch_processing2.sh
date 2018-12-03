@@ -2,9 +2,9 @@
 CUDA_VISIBLE_DEVICES=$1
 gamma=0.2
 size=2
-for w2v_option in 4 5 6 2
+for w2v_option in 4 5 6
 do
-	mode=12
+	mode=5
 	if [[ $# -lt 6 ]]; then
 		EXPNAME=w2v${w2v_option}_mode${mode}_sz${size}_gm${gamma}
 	else
