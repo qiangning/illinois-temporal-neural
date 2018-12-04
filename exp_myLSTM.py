@@ -91,12 +91,13 @@ class experiment:
                 optimizer.step()
             all_train_losses.append(current_train_loss)
             current_train_acc, _ = self.eval(trainset)
-            current_test_acc, _ = self.eval(testset)
+            current_test_acc, confusion = self.eval(testset)
             all_train_accuracies.append(float(current_train_acc))
             all_test_accuracies.append(float(current_test_acc))
             print("Loss at epoch %d: %.4f" % (epoch, current_train_loss), flush=True)
             print("Train acc at epoch %d: %.4f" % (epoch, current_train_acc), flush=True)
             print("Dev/Test acc at epoch %d: %.4f" % (epoch, current_test_acc), flush=True)
+            print(confusion, flush=True)
             torch.save({
                 'epoch': epoch,
                 'model_state_dict': self.model.state_dict(),
@@ -127,6 +128,12 @@ class experiment:
             plt.close('all')
         return all_train_losses,all_train_accuracies,all_test_accuracies
 
+    def test(self):
+        self.model.eval()
+        test_acc, test_confusion = self.eval(self.testset)
+        print("TEST ACCURACY=%.4f" % test_acc)
+        print("CONFUSION MAT:")
+        print(test_confusion)
 
     def eval(self,eval_on_set):
         was_training = self.model.training
@@ -185,6 +192,7 @@ class bigramGetter_fromNN:
 @click.option("--lstm_hid_dim",default=128)
 @click.option("--nn_hid_dim",default=64)
 @click.option("--pos_emb_dim",default=32)
+@click.option("--common_sense_emb_dim",default=64)
 @click.option("--lr",default=0.1)
 @click.option("--weight_decay",default=1e-4)
 @click.option("--step_size",default=10)
@@ -193,7 +201,10 @@ class bigramGetter_fromNN:
 @click.option("--expname",default="test")
 @click.option("--skiptuning", is_flag=True)
 @click.option("--mode",default=0)
-def run(w2v_option,lstm_hid_dim,nn_hid_dim,pos_emb_dim,lr,weight_decay,step_size,gamma,max_epoch,expname,skiptuning,mode):
+@click.option("--dropout", is_flag=True)
+@click.option("--timeline_kb", is_flag=True)
+@click.option("--debug",is_flag=True)
+def run(w2v_option, lstm_hid_dim, nn_hid_dim, pos_emb_dim, common_sense_emb_dim, lr, weight_decay, step_size, gamma, max_epoch, expname, skiptuning, mode, dropout, timeline_kb, debug):
 
     trainset = temprel_set("data/Output4LSTM_Baseline/trainset.xml")
     testset = temprel_set("data/Output4LSTM_Baseline/testset.xml")
@@ -240,6 +251,7 @@ def run(w2v_option,lstm_hid_dim,nn_hid_dim,pos_emb_dim,lr,weight_decay,step_size
                   'position_emb_dim':pos_emb_dim,\
                   'bigramStats_dim':2,\
                   'lemma_emb_dim':200,\
+                  'dropout':dropout,\
                   'batch_size':1}
     params_optim = {'lr':lr,'weight_decay':weight_decay,'step_size':step_size,'gamma':gamma,'max_epoch':max_epoch}
     print("___________________HYPER-PARAMETERS:LSTM___________________")
@@ -345,27 +357,64 @@ def run(w2v_option,lstm_hid_dim,nn_hid_dim,pos_emb_dim,lr,weight_decay,step_size
         model = lstm_NN_embeddings3(params, emb_cache, bigramGetter, position2ix)
     elif mode == 9:  # Proposed: pairwise, temprob, raw stats==>categorical common sense embedding
         bigramGetter = pkl.load(open("/shared/preprocessed/qning2/temporal/TemProb/temporal_bigram_stats.pkl", 'rb'))
-        model = lstm_NN_bigramStats2(params, emb_cache, bigramGetter, position2ix, granularity=0.1, common_sense_emb_dim=64)
+        model = lstm_NN_bigramStats2(params, emb_cache, bigramGetter, position2ix, granularity=0.1, common_sense_emb_dim=common_sense_emb_dim)
     elif mode == 10: # mode 1 + mode 5
-        bigramGetter = pkl.load(open("/shared/preprocessed/qning2/temporal/TemProb/temporal_bigram_stats.pkl", 'rb'))
-        model = lstm_NN_bigramStats3(params, emb_cache, bigramGetter, position2ix, granularity=0.1, common_sense_emb_dim=64)
+        if timeline_kb:
+            bigramGetter = pkl.load(open("/shared/preprocessed/qning2/temporal/TimeLines/temporal_bigram_stats_new_all.pkl", 'rb'))
+        else: # temprob KB
+            bigramGetter = pkl.load(open("/shared/preprocessed/qning2/temporal/TemProb/temporal_bigram_stats.pkl", 'rb'))
+        model = lstm_NN_bigramStats3(params, emb_cache, bigramGetter, position2ix, granularity=0.1, common_sense_emb_dim=common_sense_emb_dim)
     elif mode == 11:
-        bigramGetter = pkl.load(open("/shared/preprocessed/qning2/temporal/TemProb/temporal_bigram_stats.pkl", 'rb'))
-        model = lstm_NN_bigramStats4(params, emb_cache, bigramGetter, position2ix, granularity=0.1, common_sense_emb_dim=64)
-    elif mode == 12:
-        bigramGetter = pkl.load(open("/shared/preprocessed/qning2/temporal/TemProb/temporal_bigram_stats.pkl", 'rb'))
-        model = lstm_NN_bigramStats5(params, emb_cache, bigramGetter, position2ix, granularity=0.1, common_sense_emb_dim=64)
+        if timeline_kb:
+            bigramGetter = pkl.load(open("/shared/preprocessed/qning2/temporal/TimeLines/temporal_bigram_stats_new_all.pkl", 'rb'))
+        else: # temprob KB
+            bigramGetter = pkl.load(open("/shared/preprocessed/qning2/temporal/TemProb/temporal_bigram_stats.pkl", 'rb'))
+        model = lstm_NN_bigramStats4(params, emb_cache, bigramGetter, position2ix, granularity=0.1, common_sense_emb_dim=common_sense_emb_dim)
+    elif mode == 12: # NN fitted stats from temprob/timelines, categorical embeddings
+        ratio = 0.3
+        emb_size = 200
+        layer = 1
+        print("---------")
+        print("ratio=%s,emb_size=%d,layer=%d" % (str(ratio), emb_size, layer))
+        if timeline_kb:
+            emb_path = '/shared/preprocessed/sssubra2/embeddings/models/Timelines/embeddings_%.1f_%d_%d_timelines.txt' % (ratio, emb_size, layer)
+            mdl_path = '/shared/preprocessed/sssubra2/embeddings/models/Timelines/pairwise_model_%.1f_%d_%d.pt' % (ratio, emb_size, layer)
+        else:
+            emb_path = '/shared/preprocessed/sssubra2/embeddings/models/TemProb/embeddings_%.1f_%d_%d_temprob.txt' % (ratio, emb_size, layer)
+            mdl_path = '/shared/preprocessed/sssubra2/embeddings/models/TemProb/pairwise_model_%.1f_%d_%d.pt' % (ratio, emb_size, layer)
+        bigramGetter = bigramGetter_fromNN(emb_path, mdl_path, ratio, layer, emb_size)
+        model = lstm_NN_bigramStats3(params, emb_cache, bigramGetter, position2ix, granularity=0.1, common_sense_emb_dim=common_sense_emb_dim)
+    elif mode == 13:
+        ratio = 0.3
+        emb_size = 200
+        layer = 1
+        print("---------")
+        if timeline_kb:
+            emb_path = '/shared/preprocessed/sssubra2/embeddings/models/Timelines/embeddings_%.1f_%d_%d_timelines.txt' % (ratio, emb_size, layer)
+            mdl_path = '/shared/preprocessed/sssubra2/embeddings/models/Timelines/pairwise_model_%.1f_%d_%d.pt' % (ratio, emb_size, layer)
+        else:
+            emb_path = '/shared/preprocessed/sssubra2/embeddings/models/TemProb/embeddings_%.1f_%d_%d_temprob.txt' % (ratio, emb_size, layer)
+            mdl_path = '/shared/preprocessed/sssubra2/embeddings/models/TemProb/pairwise_model_%.1f_%d_%d.pt' % (ratio, emb_size, layer)
+        if layer == 1:
+            params['lemma_emb_dim'] = int(emb_size * 2 * ratio)
+        elif layer == 2:
+            params['lemma_emb_dim'] = int(emb_size * 2 * ratio) + int(emb_size * ratio)
+        print("ratio=%s,emb_size=%d,layer=%d,lemma_emb_dim=%d" % (str(ratio), emb_size, layer, params['lemma_emb_dim']))
+        bigramGetter = bigramGetter_fromNN(emb_path, mdl_path, ratio, layer, emb_size, splitter=',')
+        model = lstm_NN_bigramStats4(params, emb_cache, bigramGetter, position2ix, granularity=0.1, common_sense_emb_dim=common_sense_emb_dim)
     else:
         print('Error! No such mode: %d' %mode)
         sys.exit(-1)
-    exp = experiment(model=model,trainset=trainset.temprel_ee,testset=testset.temprel_ee,\
-                     params=params_optim,exp_name=expname,modelPath="models/ckpt", \
-                     output_labels=output_labels,skiptuning=skiptuning)
+    if debug:
+        exp = experiment(model=model, trainset=trainset.temprel_ee[:100], testset=testset.temprel_ee[:100], \
+                         params=params_optim, exp_name=expname, modelPath="models/ckpt", \
+                         output_labels=output_labels, skiptuning=skiptuning)
+    else:
+        exp = experiment(model=model,trainset=trainset.temprel_ee,testset=testset.temprel_ee,\
+                         params=params_optim,exp_name=expname,modelPath="models/ckpt", \
+                         output_labels=output_labels,skiptuning=skiptuning)
     exp.train()
-    test_acc, test_confusion = exp.eval(testset.temprel_ee)
-    print("TEST ACCURACY=%.4f" % test_acc)
-    print("CONFUSION MAT:")
-    print(test_confusion)
+    exp.test()
 
 if __name__ == '__main__':
     run()

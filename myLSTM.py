@@ -178,6 +178,7 @@ class lstm_NN_bigramStats3(nn.Module): # convert bigramstats into categorical em
         self.nn_hidden_dim = params.get('nn_hidden_dim',32)
         self.position_emb_dim = params.get('position_emb_dim',16)
         self.bigramStats_dim = params.get('bigramStats_dim')
+        self.is_dropout = params.get('dropout',False)
         self.emb_cache = emb_cache
         self.bigramGetter = bigramGetter
         self.output_dim = params.get('output_dim',4)
@@ -194,7 +195,11 @@ class lstm_NN_bigramStats3(nn.Module): # convert bigramstats into categorical em
         else:
             self.lstm = nn.LSTM(self.embedding_dim + self.position_emb_dim, self.lstm_hidden_dim,\
                                 num_layers=1, bidirectional=False)
+        if self.is_dropout:
+            self.lstm.dropout = 0.5
         self.h_lstm2h_nn = nn.Linear(self.lstm_hidden_dim, self.nn_hidden_dim)
+        if self.is_dropout:
+            self.dropout = nn.Dropout(0.5)
         self.h_nn2o = nn.Linear(self.nn_hidden_dim+self.common_sense_emb_dim, self.output_dim)
         self.init_hidden()
     def reset_parameters(self):
@@ -224,7 +229,10 @@ class lstm_NN_bigramStats3(nn.Module): # convert bigramstats into categorical em
         lstm_out = lstm_out[-1][:][:]
         bigramstats = self.bigramGetter.getBigramStatsFromTemprel(temprel)
         common_sense_emb = self.common_sense_emb(torch.cuda.LongTensor([int(bigramstats[0][0]/self.granularity)])).view(1,-1)
-        h_nn = F.relu(self.h_lstm2h_nn(lstm_out))
+        if self.is_dropout:
+            h_nn = F.relu(self.dropout(self.h_lstm2h_nn(lstm_out)))
+        else:
+            h_nn = F.relu(self.h_lstm2h_nn(lstm_out))
         output = self.h_nn2o(torch.cat((h_nn,common_sense_emb),1))
         return output
 
@@ -237,6 +245,7 @@ class lstm_NN_bigramStats4(nn.Module): # convert bigramstats into categorical em
         self.nn_hidden_dim = params.get('nn_hidden_dim',32)
         self.position_emb_dim = params.get('position_emb_dim',16)
         self.bigramStats_dim = params.get('bigramStats_dim')
+        self.is_dropout = params.get('dropout',False)
         self.emb_cache = emb_cache
         self.bigramGetter = bigramGetter
         self.output_dim = params.get('output_dim',4)
@@ -253,7 +262,11 @@ class lstm_NN_bigramStats4(nn.Module): # convert bigramstats into categorical em
         else:
             self.lstm = nn.LSTM(self.embedding_dim + self.position_emb_dim, self.lstm_hidden_dim,\
                                 num_layers=1, bidirectional=False)
+        if self.is_dropout:
+            self.lstm.dropout = 0.5
         self.h_lstm2h_nn = nn.Linear(self.lstm_hidden_dim, self.nn_hidden_dim)
+        if self.is_dropout:
+            self.dropout = nn.Dropout(0.5)
         self.lemma_emb2h_nn = nn.Linear(self.common_sense_emb_dim, self.nn_hidden_dim)
         self.h_nn2o = nn.Linear(self.nn_hidden_dim*2, self.output_dim)
         self.init_hidden()
@@ -284,8 +297,12 @@ class lstm_NN_bigramStats4(nn.Module): # convert bigramstats into categorical em
         lstm_out = lstm_out[-1][:][:]
         bigramstats = self.bigramGetter.getBigramStatsFromTemprel(temprel)
         common_sense_emb = self.common_sense_emb(torch.cuda.LongTensor([int(bigramstats[0][0]/self.granularity)])).view(1,-1)
-        h_nn = F.relu(self.h_lstm2h_nn(lstm_out))
-        h_nn2 = F.relu(self.lemma_emb2h_nn(common_sense_emb))
+        if self.is_dropout:
+            h_nn = F.relu(self.dropout(self.h_lstm2h_nn(lstm_out)))
+            h_nn2 = F.relu(self.dropout(self.lemma_emb2h_nn(common_sense_emb)))
+        else:
+            h_nn = F.relu(self.h_lstm2h_nn(lstm_out))
+            h_nn2 = F.relu(self.lemma_emb2h_nn(common_sense_emb))
         output = self.h_nn2o(torch.cat((h_nn,h_nn2),1))
         return output
 

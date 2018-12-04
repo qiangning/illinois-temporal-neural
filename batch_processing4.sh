@@ -5,7 +5,7 @@ gamma=0.5
 size=2
 step=20
 max_epoch=80
-for w2v_option in 2
+for w2v_option in 4
 do
 	for mode in 10 11 12 13
 	do
