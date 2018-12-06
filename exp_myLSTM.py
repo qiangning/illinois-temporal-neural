@@ -13,7 +13,7 @@ import torch.optim as optim
 from sklearn.model_selection import train_test_split
 torch.set_default_tensor_type('torch.cuda.FloatTensor')
 from utils import *
-seed_everything(13234)
+seed_everything(1234)
 
 from ELMo_Cache import *
 from WordEmbeddings_Cache import *
@@ -201,7 +201,7 @@ class bigramGetter_fromLM:
         self.verb_i_map = {}
         for i in range(len(all_verbs)):
             self.verb_i_map[all_verbs[i]] = i
-        self.model = BieberLSTM(len(all_verbs), nb_layers=1)
+        self.model = BieberLSTM(len(all_verbs), nb_layers=1).cuda()
         checkpoint = torch.load(mdl_path)
         self.model.load_state_dict(checkpoint['model_state_dict'])
         self.emb_size = emb_size
@@ -215,7 +215,10 @@ class bigramGetter_fromLM:
                 break
         if v1 not in self.verb_i_map or v2 not in self.verb_i_map:
             return torch.zeros((1, 2*self.emb_size), dtype=torch.float32)
-        return torch.cat(self.model.word_embedding(torch.tensor([self.verb_i_map[v1]]).cuda()), self.model.word_embedding(torch.tensor([self.verb_i_map[v2]]).cuda()), dim=1)
+        hidden = self.model.init_hidden()
+        outputs, _ = self.model.lstm(self.model.word_embedding(torch.tensor([self.verb_i_map[v1], self.verb_i_map[v2]]).cuda()), hidden)
+        return outputs.view(1, -1)
+        # return torch.cat(self.model.word_embedding(torch.tensor([self.verb_i_map[v1]]).cuda()), self.model.word_embedding(torch.tensor([self.verb_i_map[v2]]).cuda()), dim=1)
 
 @click.command()
 @click.option("--w2v_option",default=2)
@@ -444,6 +447,17 @@ def run(w2v_option, lstm_hid_dim, nn_hid_dim, pos_emb_dim, common_sense_emb_dim,
         params['lemma_emb_dim'] = int(emb_size*2)
         bigramGetter = bigramGetter_fromLM(mdl_path, all_verbs, emb_size)
         model = lstm_NN_embeddings2(params, emb_cache, bigramGetter, position2ix)
+    elif mode == 15: # Proposed: with embeddings from LM but put one extra layer after embeddings before concat with the final layer of output
+        hidden_size = 100
+        emb_size = 200
+        print("---------")
+        all_verbs_path = '/shared/preprocessed/sssubra2/embeddings/models/LanguageModel/all_verbs.npy'
+        all_verbs = np.load(all_verbs_path)
+        mdl_path = '/shared/preprocessed/sssubra2/embeddings/models/LanguageModel/language_model_emb%d_bilstm%d.pt' % (
+            emb_size, hidden_size)
+        params['lemma_emb_dim'] = int(emb_size*2)
+        bigramGetter = bigramGetter_fromLM(mdl_path, all_verbs, emb_size)
+        model = lstm_NN_embeddings3(params, emb_cache, bigramGetter, position2ix)
     else:
         print('Error! No such mode: %d' %mode)
         sys.exit(-1)
