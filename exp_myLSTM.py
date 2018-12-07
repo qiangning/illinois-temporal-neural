@@ -13,7 +13,7 @@ import torch.optim as optim
 from sklearn.model_selection import train_test_split
 torch.set_default_tensor_type('torch.cuda.FloatTensor')
 from utils import *
-seed_everything(1234)
+seed_everything(13234)
 
 from ELMo_Cache import *
 from WordEmbeddings_Cache import *
@@ -68,8 +68,8 @@ class experiment:
         weight_decay = self.params.get('weight_decay',1e-4)
         step_size = self.params.get('step_size',10)
         gamma = self.params.get('gamma',0.3)
-        optimizer = optim.SGD(self.model.parameters(), lr=lr, weight_decay=weight_decay)
-        # optimizer = optim.Adam(self.model.parameters(), lr=lr)
+        # optimizer = optim.SGD(self.model.parameters(), lr=lr, weight_decay=weight_decay)
+        optimizer = optim.Adam(self.model.parameters())
         scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=step_size, gamma=gamma)
         criterion = nn.CrossEntropyLoss()
         all_train_losses = []
