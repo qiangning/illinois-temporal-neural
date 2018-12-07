@@ -84,6 +84,63 @@ class lstm_NN_baseline(nn.Module):
         output = self.h_nn2o(h_nn)
         return output
 
+
+class lstm_NN_xml(nn.Module):
+    def __init__(self, params,emb_cache,bidirectional=False):
+        super(lstm_NN_xml, self).__init__()
+        self.params = params
+        self.embedding_dim = params.get('embedding_dim')
+        self.lstm_hidden_dim = params.get('lstm_hidden_dim',64)
+        self.nn_hidden_dim = params.get('nn_hidden_dim',32)
+        self.emb_cache = emb_cache
+        self.output_dim = params.get('output_dim',4)
+        self.batch_size = params.get('batch_size',1)
+        self.position_emb = nn.Embedding(4, self.embedding_dim) # <E1>:0 </E1>:1 <E2>:2 </E2>:3
+        self.bidirectional = bidirectional
+        if self.bidirectional:
+            self.lstm = nn.LSTM(self.embedding_dim, self.lstm_hidden_dim // 2,\
+                                num_layers=1, bidirectional=True)
+        else:
+            self.lstm = nn.LSTM(self.embedding_dim, self.lstm_hidden_dim,\
+                                num_layers=1, bidirectional=False)
+        self.h_lstm2h_nn = nn.Linear(self.lstm_hidden_dim, self.nn_hidden_dim)
+        self.h_nn2o = nn.Linear(self.nn_hidden_dim, self.output_dim)
+        self.init_hidden()
+    def reset_parameters(self):
+        self.lstm.reset_parameters()
+        self.h_lstm2h_nn.reset_parameters()
+        self.h_nn2o.reset_parameters()
+    def init_hidden(self):
+        if self.bidirectional:
+            self.hidden = (torch.randn(2 * self.lstm.num_layers, self.batch_size, self.lstm_hidden_dim // 2),\
+                           torch.randn(2 * self.lstm.num_layers, self.batch_size, self.lstm_hidden_dim // 2))
+        else:
+            self.hidden = (torch.randn(1 * self.lstm.num_layers, self.batch_size, self.lstm_hidden_dim),\
+                           torch.randn(1 * self.lstm.num_layers, self.batch_size, self.lstm_hidden_dim))
+
+    def forward(self, temprel):
+        self.init_hidden()
+        embeds = self.emb_cache.retrieveEmbeddings(tokList=temprel.token).cuda()
+        embeds = embeds.view(temprel.length, self.batch_size, -1)
+        event_ix = temprel.event_ix
+        embeds_with_position = torch.cat(
+            (embeds[:event_ix[0]][:][:],
+             self.position_emb(torch.cuda.LongTensor([0])).view(1,self.batch_size,-1),\
+             embeds[event_ix[0]].view(1,self.batch_size,-1), \
+             self.position_emb(torch.cuda.LongTensor([1])).view(1,self.batch_size,-1),\
+             embeds[event_ix[0]+1:event_ix[1]][:][:], \
+             self.position_emb(torch.cuda.LongTensor([2])).view(1,self.batch_size,-1),\
+             embeds[event_ix[1]].view(1,self.batch_size,-1), \
+             self.position_emb(torch.cuda.LongTensor([3])).view(1,self.batch_size,-1),\
+             embeds[event_ix[1]+1:][:][:]),0)
+        lstm_out, self.hidden = self.lstm(embeds_with_position, self.hidden)
+        lstm_out = lstm_out.view(embeds_with_position.size()[0], self.batch_size, self.lstm_hidden_dim)
+        #lstm_out = torch.cat((lstm_out[event_ix[0]+1][:][:],lstm_out[event_ix[1]+3][:][:]),0)
+        lstm_out = lstm_out[-1][:][:]
+        h_nn = F.relu(self.h_lstm2h_nn(lstm_out.view(1,-1)))
+        output = self.h_nn2o(h_nn)
+        return output
+
 # obsolete
 class bilstm_baseline(nn.Module):
     def __init__(self, embedding_dim, hidden_dim, position_emb_dim, emb_cache, output_dim, batch_size, position2ix):

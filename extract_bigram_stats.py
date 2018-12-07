@@ -10,7 +10,7 @@ import math
 import pickle as pkl
 from utils import *
 
-# torch.set_default_tensor_type('torch.cuda.FloatTensor')
+torch.set_default_tensor_type('torch.cuda.FloatTensor')
 
 class temporal_bigram:
     def __init__(self):
