@@ -93,7 +93,7 @@ class lstm_NN_baseline(nn.Module):
 
 
 class NN_baseline(nn.Module):
-    def __init__(self, params, emb_cache, bidirectional=False, lowerCase=False):
+    def __init__(self, params, emb_cache, bidirectional=False, lowerCase=False, verbEmbeddingOnly=False):
         super(NN_baseline, self).__init__()
         self.params = params
         self.embedding_dim = params.get('embedding_dim')
@@ -103,6 +103,7 @@ class NN_baseline(nn.Module):
         self.batch_size = params.get('batch_size', 1)
         self.bidirectional = bidirectional
         self.lowerCase = lowerCase
+        self.verbEmbeddingOnly = verbEmbeddingOnly
         self.h_word2h_nn = nn.Linear(2 * self.embedding_dim, self.nn_hidden_dim)
         self.h_nn2o = nn.Linear(self.nn_hidden_dim, self.output_dim)
 
@@ -111,12 +112,17 @@ class NN_baseline(nn.Module):
         self.h_nn2o.reset_parameters()
 
     def forward(self, temprel):
-        if not self.lowerCase:
-            embeds = self.emb_cache.retrieveEmbeddings(tokList=temprel.token).cuda()
+        if self.verbEmbeddingOnly:
+            embed1 = self.emb_cache.retrieveEmbeddings(temprel.token[temprel.event_ix[0]]).cuda()
+            embed2 = self.emb_cache.retrieveEmbeddings(temprel.token[temprel.event_ix[1]]).cuda()
+            h_word = torch.cat((embed1,embed2),0).view(1,-1)
         else:
-            embeds = self.emb_cache.retrieveEmbeddings(tokList=[x.lower() for x in temprel.token]).cuda()
-        embeds = embeds.view(temprel.length, self.batch_size, -1)
-        h_word = embeds[temprel.event_ix].view(1, -1)
+            if not self.lowerCase:
+                embeds = self.emb_cache.retrieveEmbeddings(tokList=temprel.token).cuda()
+            else:
+                embeds = self.emb_cache.retrieveEmbeddings(tokList=[x.lower() for x in temprel.token]).cuda()
+            embeds = embeds.view(temprel.length, self.batch_size, -1)
+            h_word = embeds[temprel.event_ix].view(1, -1)
         h_nn = F.relu(self.h_word2h_nn(h_word))
         output = self.h_nn2o(h_nn)
         return output

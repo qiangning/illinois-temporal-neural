@@ -11,7 +11,7 @@ export OPENMP_NUM_THREADS=1
 export MKL_NUM_THREADS=1
 for w2v_option in 2
 do
-	for mode in -2
+	for mode in -1
 	do
 		for lr in 0.001
 		do
@@ -19,9 +19,9 @@ do
 			do
 				for weight_decay in 1e-2
 				do
-					for lstm_hid_dim in 256
+					for lstm_hid_dim in 128 64
 					do
-						for nn_hid_dim in 64
+						for nn_hid_dim in 32
 						do
 							EXPNAME=${name_prefix}_w2v${w2v_option}_mode${mode}_hidden${lstm_hid_dim}${nn_hid_dim}_gm${gamma}_step${step}_lr${lr}
 							if [ "$dropout" == "true" ]; then

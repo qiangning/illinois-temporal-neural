@@ -7,6 +7,32 @@ from TemporalDataSet import *
 from utils import *
 import click
 
+class verb_embeddings:
+    def __init__(self,filepath,dim=200,splitter=' '):
+        self.filepath = filepath
+        self.dim = dim
+        self.splitter = splitter
+        self.cache = {}
+        self.load()
+    def load(self):
+        f = open(self.filepath,"r")
+        allContent = f.readlines()
+        for line in allContent:
+            elements = line.split(self.splitter)
+            verb = elements[0]
+            vector = [float(x) for x in elements[1:]]
+            if len(vector) != self.dim:
+                continue
+            vector = torch.Tensor(vector)
+            self.cache[verb] = vector
+    def retrieveEmbeddings(self, verb):
+        if verb in self.cache:
+            return self.cache[verb]
+        if verb.lower() in self.cache:
+            return self.cache[verb.lower()]
+        return torch.Tensor([0]*self.dim)
+
+
 class w2v_cache:
     def __init__(self,magnitude,cache_path,verbose=False):
         self.magnitude = magnitude

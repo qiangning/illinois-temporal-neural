@@ -296,6 +296,18 @@ def run(w2v_option, lstm_hid_dim, nn_hid_dim, pos_emb_dim, common_sense_emb_dim,
         embedding_dim = 1024
         print("bert_large_uncased_cache")
         emb_cache = bert_cache(None,None,"ser/bert_large_uncased_cache.pkl",verbose=False)
+    elif w2v_option == 8: # embeddings from LM
+        print("embeddings_lm_emb200_bilstm100")
+        embedding_dim = 200
+        emb_cache = verb_embeddings("/shared/preprocessed/sssubra2/embeddings/models/LanguageModel/embeddings_lm_emb200_bilstm100.txt",dim=embedding_dim)
+    elif w2v_option == 9: # embeddings from Siamese network
+        print("embeddings_0.3_200_2_temprob.txt")
+        embedding_dim = 200
+        emb_cache = verb_embeddings("/shared/preprocessed/sssubra2/embeddings/models/TemProb/embeddings_0.3_200_2_temprob.txt",dim=embedding_dim,splitter=",")
+    elif w2v_option == 10: # embeddings from Siamese network
+        print("embeddings_0.3_500_2_temprob.txt")
+        embedding_dim = 500
+        emb_cache = verb_embeddings("/shared/preprocessed/sssubra2/embeddings/models/TemProb/embeddings_0.3_500_2_temprob.txt",dim=embedding_dim,splitter=",")
     else:
         print("word embedding option is wrong (%d)." % w2v_option)
         embedding_dim = 256
@@ -320,7 +332,10 @@ def run(w2v_option, lstm_hid_dim, nn_hid_dim, pos_emb_dim, common_sense_emb_dim,
 
     print("MODE=%d" %mode)
     if mode == -3: # Baseline: directly use word vectors
-        model = NN_baseline(params, emb_cache,bilstm,lowerCase=w2v_option==7)
+        if w2v_option >=8 and w2v_option <= 10:
+            model = NN_baseline(params, emb_cache,bilstm,lowerCase=w2v_option==7,verbEmbeddingOnly=True)
+        else:
+            model = NN_baseline(params, emb_cache, bilstm, lowerCase=w2v_option == 7, verbEmbeddingOnly=False)
     elif mode == -2: # Baseline: XML position embedding
         model = lstm_NN_xml(params, emb_cache,bilstm,lowerCase=w2v_option==7)
     elif mode == -1: # Baseline: without position embedding. pure LSTM+NN
