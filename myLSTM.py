@@ -5,7 +5,7 @@ import torch.nn.functional as F
 torch.set_default_tensor_type('torch.cuda.FloatTensor')
 
 class lstm_NN_position_embedding(nn.Module):
-    def __init__(self, params,emb_cache,position2ix,bidirectional=False):
+    def __init__(self, params,emb_cache,position2ix,bidirectional=False, lowerCase=False):
         super(lstm_NN_position_embedding, self).__init__()
         self.params = params
         self.embedding_dim = params.get('embedding_dim')
@@ -18,6 +18,7 @@ class lstm_NN_position_embedding(nn.Module):
         self.position2ix = position2ix
         self.position_emb = nn.Embedding(len(position2ix), self.position_emb_dim)
         self.bidirectional = bidirectional
+        self.lowerCase = lowerCase
         if self.bidirectional:
             self.lstm = nn.LSTM(self.embedding_dim + self.position_emb_dim, self.lstm_hidden_dim // 2,\
                                 num_layers=1, bidirectional=True)
@@ -34,14 +35,17 @@ class lstm_NN_position_embedding(nn.Module):
         # self.position_emb.reset_parameters()
     def init_hidden(self):
         if self.bidirectional:
-            self.hidden = (torch.randn(2 * self.lstm.num_layers, self.batch_size, self.hidden_dim // 2),\
-                           torch.randn(2 * self.lstm.num_layers, self.batch_size, self.hidden_dim // 2))
+            self.hidden = (torch.randn(2 * self.lstm.num_layers, self.batch_size, self.lstm_hidden_dim // 2),\
+                           torch.randn(2 * self.lstm.num_layers, self.batch_size, self.lstm_hidden_dim // 2))
         else:
             self.hidden = (torch.randn(1 * self.lstm.num_layers, self.batch_size, self.lstm_hidden_dim),\
                            torch.randn(1 * self.lstm.num_layers, self.batch_size, self.lstm_hidden_dim))
 
     def temprel2embeddingSeq(self, temprel):
-        embeddings = self.emb_cache.retrieveEmbeddings(tokList=temprel.token).cuda()
+        if not self.lowerCase:
+            embeddings = self.emb_cache.retrieveEmbeddings(tokList=temprel.token).cuda()
+        else:
+            embeddings = self.emb_cache.retrieveEmbeddings(tokList=[x.lower() for x in temprel.token]).cuda()
         position_emb = self.position_emb(torch.cuda.LongTensor([self.position2ix[t] for t in temprel.position]))
         return torch.cat((embeddings, position_emb), 1).view(temprel.length, self.batch_size, -1)
 

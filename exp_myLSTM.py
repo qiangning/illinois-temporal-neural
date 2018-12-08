@@ -12,6 +12,7 @@ seed_everything(13234)
 import os
 
 from ELMo_Cache import *
+from BERT_Cache import *
 from WordEmbeddings_Cache import *
 from TemporalDataSet import *
 from LemmaEmbeddings import *
@@ -69,7 +70,8 @@ class experiment:
 
         print("\n\n#####Summary#####")
         print("---Max Epoch (%d) Acc=%.4f" %(self.params.get('max_epoch')-1,all_test_accuracies[self.params.get('max_epoch')-1]))
-        print("---Tuned Epoch (%d) Acc=%.4f" %(self.best_epoch,all_test_accuracies[self.best_epoch]))
+        if not self.skiptuning:
+            print("---Tuned Epoch (%d) Acc=%.4f" %(self.best_epoch,all_test_accuracies[self.best_epoch]))
         print("---Best Epoch (%d) Acc=%.4f" %(best_ix,best_test_acc))
 
 
@@ -115,7 +117,7 @@ class experiment:
             prec,rec,f1 = confusion2prf(confusion)
             print("Prec=%.4f, Rec=%.4f, F1=%.4f" %(prec,rec,f1))
             if tag=='retrain':
-                if epoch==self.best_epoch:
+                if epoch==self.best_epoch and not self.skiptuning:
                     torch.save({
                         'epoch': epoch,
                         'model_state_dict': self.model.state_dict(),
@@ -290,10 +292,14 @@ def run(w2v_option, lstm_hid_dim, nn_hid_dim, pos_emb_dim, common_sense_emb_dim,
         embedding_dim = 300
         print("GoogleNews-vectors-negative300-medium.magnitude")
         emb_cache = w2v_cache(None, "ser/w2v_cache_GoogleNews-vectors-negative300-medium.magnitude.pkl", verbose=False)
+    elif w2v_option == 7:
+        embedding_dim = 1024
+        print("bert_large_uncased_cache")
+        emb_cache = bert_cache(None,None,"ser/bert_large_uncased_cache.pkl",verbose=False)
     else:
         print("word embedding option is wrong (%d)." % w2v_option)
         embedding_dim = 256
-        emb_cache = elmo_cache(None, "ser/elmo_cache_small.pkl", verbose=False)
+        emb_cache = elmo_cache(None, "ser/elmo_cache_small.pkl", verbose=True)
 
     position2ix = {"B":0,"M":1,"A":2,"E1":3,"E2":4}
     output_labels = {"BEFORE":0,"AFTER":1,"EQUAL":2,"VAGUE":3}
@@ -313,12 +319,14 @@ def run(w2v_option, lstm_hid_dim, nn_hid_dim, pos_emb_dim, common_sense_emb_dim,
     print(params_optim)
 
     print("MODE=%d" %mode)
-    if mode == -2: # Baseline: XML position embedding
-        model = lstm_NN_xml(params, emb_cache,bilstm)
+    if mode == -3: # Baseline: directly use word vectors
+        model = NN_baseline(params, emb_cache,bilstm,lowerCase=w2v_option==7)
+    elif mode == -2: # Baseline: XML position embedding
+        model = lstm_NN_xml(params, emb_cache,bilstm,lowerCase=w2v_option==7)
     elif mode == -1: # Baseline: without position embedding. pure LSTM+NN
-        model = lstm_NN_baseline(params, emb_cache,bilstm)
+        model = lstm_NN_baseline(params, emb_cache,bilstm,lowerCase=w2v_option==7)
     elif mode==0: # Proposed baseline: w/ position embedding, but without bigram stats
-        model = lstm_NN_position_embedding(params, emb_cache, position2ix,bilstm)
+        model = lstm_NN_position_embedding(params, emb_cache, position2ix, bilstm,lowerCase=w2v_option==7)
     elif mode == 1: # Proposed: pairwise, temprob, raw stats
         bigramGetter = pkl.load(open("/shared/preprocessed/qning2/temporal/TemProb/temporal_bigram_stats.pkl", 'rb'))
         model = lstm_NN_bigramStats(params, emb_cache, bigramGetter, position2ix,bilstm)
