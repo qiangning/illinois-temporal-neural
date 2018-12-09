@@ -245,6 +245,8 @@ class bigramGetter_fromNN:
 @click.option("--nn_hid_dim",default=64)
 @click.option("--pos_emb_dim",default=32)
 @click.option("--common_sense_emb_dim",default=64)
+@click.option("--bigramstats_dim",default=1)
+@click.option("--granularity",default=0.1)
 @click.option("--lr",default=0.1)
 @click.option("--weight_decay",default=1e-4)
 @click.option("--step_size",default=10)
@@ -259,7 +261,7 @@ class bigramGetter_fromNN:
 @click.option("--timeline_kb", is_flag=True)
 @click.option("--bilstm",is_flag=True)
 @click.option("--debug",is_flag=True)
-def run(w2v_option, lstm_hid_dim, nn_hid_dim, pos_emb_dim, common_sense_emb_dim, lr, weight_decay, step_size, gamma, max_epoch, expname, skiptuning, skiptraining, gen_output, mode, dropout, timeline_kb, bilstm, debug):
+def run(w2v_option, lstm_hid_dim, nn_hid_dim, pos_emb_dim, common_sense_emb_dim, bigramstats_dim, granularity, lr, weight_decay, step_size, gamma, max_epoch, expname, skiptuning, skiptraining, gen_output, mode, dropout, timeline_kb, bilstm, debug):
 
     trainset = temprel_set("data/Output4LSTM_Baseline/trainset-temprel.xml")
     testset = temprel_set("data/Output4LSTM_Baseline/testset-temprel.xml")
@@ -308,6 +310,10 @@ def run(w2v_option, lstm_hid_dim, nn_hid_dim, pos_emb_dim, common_sense_emb_dim,
         print("embeddings_0.3_500_2_temprob.txt")
         embedding_dim = 500
         emb_cache = verb_embeddings("/shared/preprocessed/sssubra2/embeddings/models/TemProb/embeddings_0.3_500_2_temprob.txt",dim=embedding_dim,splitter=",")
+    elif w2v_option == 11: # embeddings from Siamese network
+        print("embeddings_0.3_200_1_timelines.txt")
+        embedding_dim = 200
+        emb_cache = verb_embeddings("/shared/preprocessed/sssubra2/embeddings/models/Timelines/embeddings_0.3_200_1_timelines.txt",dim=embedding_dim,splitter=" ")
     else:
         print("word embedding option is wrong (%d)." % w2v_option)
         embedding_dim = 256
@@ -320,7 +326,7 @@ def run(w2v_option, lstm_hid_dim, nn_hid_dim, pos_emb_dim, common_sense_emb_dim,
                   'lstm_hidden_dim':lstm_hid_dim,\
                   'nn_hidden_dim':nn_hid_dim,\
                   'position_emb_dim':pos_emb_dim,\
-                  'bigramStats_dim':2,\
+                  'bigramStats_dim':bigramstats_dim,\
                   'lemma_emb_dim':200,\
                   'dropout':dropout,\
                   'batch_size':1}
@@ -332,7 +338,7 @@ def run(w2v_option, lstm_hid_dim, nn_hid_dim, pos_emb_dim, common_sense_emb_dim,
 
     print("MODE=%d" %mode)
     if mode == -3: # Baseline: directly use word vectors
-        if w2v_option >=8 and w2v_option <= 10:
+        if w2v_option >=8 and w2v_option <= 11:
             model = NN_baseline(params, emb_cache,bilstm,lowerCase=w2v_option==7,verbEmbeddingOnly=True)
         else:
             model = NN_baseline(params, emb_cache, bilstm, lowerCase=w2v_option == 7, verbEmbeddingOnly=False)
@@ -481,6 +487,21 @@ def run(w2v_option, lstm_hid_dim, nn_hid_dim, pos_emb_dim, common_sense_emb_dim,
         print("ratio=%s,emb_size=%d,layer=%d,lemma_emb_dim=%d" % (str(ratio), emb_size, layer, params['lemma_emb_dim']))
         bigramGetter = bigramGetter_fromNN(emb_path, mdl_path, ratio, layer, emb_size, splitter=',')
         model = lstm_NN_bigramStats4(params, emb_cache, bigramGetter, position2ix, granularity=0.1, common_sense_emb_dim=common_sense_emb_dim,bidirectional=bilstm)
+    elif mode == 14: # NN fitted stats from temprob/timelines, categorical embeddings
+        ratio = 0.3
+        emb_size = 500
+        layer = 2
+        print("---------")
+        print("ratio=%s,emb_size=%d,layer=%d" % (str(ratio), emb_size, layer))
+        if timeline_kb:
+            emb_path = '/shared/preprocessed/sssubra2/embeddings/models/Timelines/embeddings_%.1f_%d_%d_timelines.txt' % (ratio, emb_size, layer)
+            mdl_path = '/shared/preprocessed/sssubra2/embeddings/models/Timelines/pairwise_model_%.1f_%d_%d.pt' % (ratio, emb_size, layer)
+        else:
+            emb_path = '/shared/preprocessed/sssubra2/embeddings/models/TemProb/embeddings_%.1f_%d_%d_temprob.txt' % (ratio, emb_size, layer)
+            mdl_path = '/shared/preprocessed/sssubra2/embeddings/models/TemProb/pairwise_model_%.1f_%d_%d_TemProb.pt' % (ratio, emb_size, layer)
+        bigramGetter = bigramGetter_fromNN(emb_path, mdl_path, ratio, layer, emb_size)
+        model = lstm_NN_baseline_bigramStats3(params, emb_cache, bigramGetter, granularity=granularity, common_sense_emb_dim=common_sense_emb_dim,bidirectional=bilstm,lowerCase=w2v_option==7)
+
     else:
         print('Error! No such mode: %d' %mode)
         sys.exit(-1)

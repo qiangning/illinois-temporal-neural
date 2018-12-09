@@ -9,7 +9,7 @@ export OMP_NUM_THREADS=1
 export OPENBLAS_NUM_THREADS=1
 export OPENMP_NUM_THREADS=1
 export MKL_NUM_THREADS=1
-CUDA_VISIBLE_DEVICES=0 python exp_myLSTM.py --w2v_option 2 --lstm_hid_dim 64 --nn_hid_dim 64 --pos_emb_dim 32 --step_size 10 --max_epoch 30 --lr 0.01 --gamma 0.3 --expname lstm_w2v2_mode-2_hidden6464_gm0.3_step10_lr0.01_dropout_wdecay1e-2 --mode -2 --gen_output --dropout --weight_decay 1e-2 > logs/lstm_w2v2_mode-2_hidden6464_gm0.3_step10_lr0.01_dropout_wdecay1e-2.txt
+# CUDA_VISIBLE_DEVICES=0 python exp_myLSTM.py --w2v_option 2 --lstm_hid_dim 64 --nn_hid_dim 64 --pos_emb_dim 32 --step_size 10 --max_epoch 30 --lr 0.01 --gamma 0.3 --expname lstm_w2v2_mode-2_hidden6464_gm0.3_step10_lr0.01_dropout_wdecay1e-2 --mode -2 --gen_output --dropout --weight_decay 1e-2 > logs/lstm_w2v2_mode-2_hidden6464_gm0.3_step10_lr0.01_dropout_wdecay1e-2.txt
 for w2v_option in 7
 do
 	for mode in -2

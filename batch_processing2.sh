@@ -9,7 +9,7 @@ export OMP_NUM_THREADS=1
 export OPENBLAS_NUM_THREADS=1
 export OPENMP_NUM_THREADS=1
 export MKL_NUM_THREADS=1
-for w2v_option in 9 10
+for w2v_option in 11
 do
 	for mode in -3
 	do
