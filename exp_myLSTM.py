@@ -25,6 +25,8 @@ class experiment:
     def __init__(self,model,trainset,testset,output_labels,params,exp_name,modelPath,skiptuning,gen_output=False):
         self.model = model
         self.params = params
+        self.finetune = self.params.get('finetune',-1)
+        self.max_epoch = self.params.get('max_epoch',20)+self.finetune
         self.trainset, self.devset = self.split_train_dev(trainset)
         self.testset = testset
         self.output_labels = output_labels
@@ -37,11 +39,11 @@ class experiment:
         train,dev = train_test_split(trainset,test_size=0.2,random_state=self.params.get('seed',2093))
         return train,dev
     def train(self):
-        self.best_epoch = self.params.get('max_epoch',20)-1
+        self.best_epoch = self.max_epoch-1
         if not self.skiptuning:
             print("------------Training and Development------------")
             all_train_losses, all_train_accuracies, all_test_accuracies =\
-                self.trainHelper(self.trainset,self.devset,self.params.get('max_epoch',20),"tuning")
+                self.trainHelper(self.trainset,self.devset,self.max_epoch,"tuning")
             # smooth within a window of +-2
             all_test_accuracies_smooth = [all_test_accuracies[0]]*2+all_test_accuracies+[all_test_accuracies[-1]]*2
             all_test_accuracies_smooth = [1.0/5*(all_test_accuracies_smooth[i-2]+all_test_accuracies_smooth[i-1]+all_test_accuracies_smooth[i]+all_test_accuracies_smooth[i+1]+all_test_accuracies_smooth[i+2]) for i in range(2,2+len(all_test_accuracies))]
@@ -60,7 +62,7 @@ class experiment:
             print("------------Training with the max epoch number (skipped tuning)------------")
         trainset_aug = self.trainset+self.devset
         _, _, all_test_accuracies =\
-            self.trainHelper(trainset_aug,self.testset,self.params.get('max_epoch',20),"retrain")
+            self.trainHelper(trainset_aug,self.testset,self.max_epoch,"retrain")
         best_ix,best_test_acc = 0,all_test_accuracies[0]
         for i in range(1,len(all_test_accuracies)):
             acc = all_test_accuracies[i]
@@ -69,7 +71,7 @@ class experiment:
                 best_ix = i
 
         print("\n\n#####Summary#####")
-        print("---Max Epoch (%d) Acc=%.4f" %(self.params.get('max_epoch')-1,all_test_accuracies[self.params.get('max_epoch')-1]))
+        print("---Max Epoch (%d) Acc=%.4f" %(self.max_epoch-1,all_test_accuracies[self.max_epoch-1]))
         if not self.skiptuning:
             print("---Tuned Epoch (%d) Acc=%.4f" %(self.best_epoch,all_test_accuracies[self.best_epoch]))
         print("---Best Epoch (%d) Acc=%.4f" %(best_ix,best_test_acc))
@@ -92,6 +94,16 @@ class experiment:
         self.model.reset_parameters()
         for epoch in range(max_epoch):
             print("epoch: %d" % epoch, flush=True)
+            if epoch < self.finetune:
+                self.model.setFinetune(True)
+            else:
+                if epoch == self.finetune:
+                    optimizer = optim.SGD(self.model.parameters(), lr=lr, weight_decay=weight_decay)
+                    scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=step_size, gamma=gamma)
+                try:
+                    self.model.setFinetune(False)
+                except:
+                    print("No fine tuning option available for model.")
             current_train_loss = 0
             random.shuffle(trainset)
             scheduler.step()
@@ -261,8 +273,9 @@ class bigramGetter_fromNN:
 @click.option("--timeline_kb", is_flag=True)
 @click.option("--bilstm",is_flag=True)
 @click.option("--debug",is_flag=True)
-def run(w2v_option, lstm_hid_dim, nn_hid_dim, pos_emb_dim, common_sense_emb_dim, bigramstats_dim, granularity, lr, weight_decay, step_size, gamma, max_epoch, expname, skiptuning, skiptraining, gen_output, mode, dropout, timeline_kb, bilstm, debug):
-
+@click.option("--sd",default=13234)
+def run(w2v_option, lstm_hid_dim, nn_hid_dim, pos_emb_dim, common_sense_emb_dim, bigramstats_dim, granularity, lr, weight_decay, step_size, gamma, max_epoch, expname, skiptuning, skiptraining, gen_output, mode, dropout, timeline_kb, bilstm, debug, sd):
+    seed_everything(sd)
     trainset = temprel_set("data/Output4LSTM_Baseline/trainset-temprel.xml")
     testset = temprel_set("data/Output4LSTM_Baseline/testset-temprel.xml")
 
@@ -488,20 +501,72 @@ def run(w2v_option, lstm_hid_dim, nn_hid_dim, pos_emb_dim, common_sense_emb_dim,
         bigramGetter = bigramGetter_fromNN(emb_path, mdl_path, ratio, layer, emb_size, splitter=',')
         model = lstm_NN_bigramStats4(params, emb_cache, bigramGetter, position2ix, granularity=0.1, common_sense_emb_dim=common_sense_emb_dim,bidirectional=bilstm)
     elif mode == 14: # NN fitted stats from temprob/timelines, categorical embeddings
-        ratio = 0.3
-        emb_size = 500
-        layer = 2
-        print("---------")
-        print("ratio=%s,emb_size=%d,layer=%d" % (str(ratio), emb_size, layer))
+
         if timeline_kb:
+            ratio = 0.3
+            emb_size = 200
+            layer = 1
+            splitter = " "
+            print("---------")
+            print("ratio=%s,emb_size=%d,layer=%d" % (str(ratio), emb_size, layer))
             emb_path = '/shared/preprocessed/sssubra2/embeddings/models/Timelines/embeddings_%.1f_%d_%d_timelines.txt' % (ratio, emb_size, layer)
             mdl_path = '/shared/preprocessed/sssubra2/embeddings/models/Timelines/pairwise_model_%.1f_%d_%d.pt' % (ratio, emb_size, layer)
         else:
+            ratio = 0.3
+            emb_size = 500
+            layer = 2
+            splitter = ","
+            print("---------")
+            print("ratio=%s,emb_size=%d,layer=%d" % (str(ratio), emb_size, layer))
             emb_path = '/shared/preprocessed/sssubra2/embeddings/models/TemProb/embeddings_%.1f_%d_%d_temprob.txt' % (ratio, emb_size, layer)
             mdl_path = '/shared/preprocessed/sssubra2/embeddings/models/TemProb/pairwise_model_%.1f_%d_%d_TemProb.pt' % (ratio, emb_size, layer)
-        bigramGetter = bigramGetter_fromNN(emb_path, mdl_path, ratio, layer, emb_size)
+        bigramGetter = bigramGetter_fromNN(emb_path, mdl_path, ratio, layer, emb_size, splitter=splitter)
         model = lstm_NN_baseline_bigramStats3(params, emb_cache, bigramGetter, granularity=granularity, common_sense_emb_dim=common_sense_emb_dim,bidirectional=bilstm,lowerCase=w2v_option==7)
 
+    elif mode == 15: # NN fitted stats from temprob/timelines, categorical embeddings
+
+        if timeline_kb:
+            ratio = 0.3
+            emb_size = 200
+            layer = 1
+            splitter = " "
+            print("---------")
+            print("ratio=%s,emb_size=%d,layer=%d" % (str(ratio), emb_size, layer))
+            emb_path = '/shared/preprocessed/sssubra2/embeddings/models/Timelines/embeddings_%.1f_%d_%d_timelines.txt' % (ratio, emb_size, layer)
+            mdl_path = '/shared/preprocessed/sssubra2/embeddings/models/Timelines/pairwise_model_%.1f_%d_%d.pt' % (ratio, emb_size, layer)
+        else:
+            ratio = 0.3
+            emb_size = 500
+            layer = 2
+            splitter = ","
+            print("---------")
+            print("ratio=%s,emb_size=%d,layer=%d" % (str(ratio), emb_size, layer))
+            emb_path = '/shared/preprocessed/sssubra2/embeddings/models/TemProb/embeddings_%.1f_%d_%d_temprob.txt' % (ratio, emb_size, layer)
+            mdl_path = '/shared/preprocessed/sssubra2/embeddings/models/TemProb/pairwise_model_%.1f_%d_%d_TemProb.pt' % (ratio, emb_size, layer)
+        bigramGetter = bigramGetter_fromNN(emb_path, mdl_path, ratio, layer, emb_size, splitter=splitter)
+        model = lstm_NN_baseline_bigramStats4(params, emb_cache, bigramGetter, granularity=granularity, common_sense_emb_dim=common_sense_emb_dim,bidirectional=bilstm,lowerCase=w2v_option==7)
+    elif mode == 16: # NN fitted stats from temprob/timelines, categorical embeddings
+
+        if timeline_kb:
+            ratio = 0.3
+            emb_size = 200
+            layer = 1
+            splitter = " "
+            print("---------")
+            print("ratio=%s,emb_size=%d,layer=%d" % (str(ratio), emb_size, layer))
+            emb_path = '/shared/preprocessed/sssubra2/embeddings/models/Timelines/embeddings_%.1f_%d_%d_timelines.txt' % (ratio, emb_size, layer)
+            mdl_path = '/shared/preprocessed/sssubra2/embeddings/models/Timelines/pairwise_model_%.1f_%d_%d.pt' % (ratio, emb_size, layer)
+        else:
+            ratio = 0.3
+            emb_size = 500
+            layer = 2
+            splitter = ","
+            print("---------")
+            print("ratio=%s,emb_size=%d,layer=%d" % (str(ratio), emb_size, layer))
+            emb_path = '/shared/preprocessed/sssubra2/embeddings/models/TemProb/embeddings_%.1f_%d_%d_temprob.txt' % (ratio, emb_size, layer)
+            mdl_path = '/shared/preprocessed/sssubra2/embeddings/models/TemProb/pairwise_model_%.1f_%d_%d_TemProb.pt' % (ratio, emb_size, layer)
+        bigramGetter = bigramGetter_fromNN(emb_path, mdl_path, ratio, layer, emb_size, splitter=splitter)
+        model = lstm_NN_baseline_bigramStats5(params, emb_cache, bigramGetter, bidirectional=bilstm,lowerCase=w2v_option==7)
     else:
         print('Error! No such mode: %d' %mode)
         sys.exit(-1)
@@ -517,7 +582,7 @@ def run(w2v_option, lstm_hid_dim, nn_hid_dim, pos_emb_dim, common_sense_emb_dim,
     if not skiptraining:
         exp.train()
     else:
-        exp.model.load_state_dict(torch.load(exp.modelPath+"_selected")['model_state_dict'])
+        exp.model.load_state_dict(torch.load(exp.modelPath+"_best")['model_state_dict'])
     exp.test()
 
 if __name__ == '__main__':

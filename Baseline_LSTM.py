@@ -77,7 +77,7 @@ class lstm_NN_baseline(nn.Module):
             self.hidden = (torch.randn(1 * self.lstm.num_layers, self.batch_size, self.lstm_hidden_dim), \
                            torch.randn(1 * self.lstm.num_layers, self.batch_size, self.lstm_hidden_dim))
 
-    def forward(self, temprel):
+    def forward_helper(self,temprel):
         self.init_hidden()
         if not self.lowerCase:
             embeds = self.emb_cache.retrieveEmbeddings(tokList=temprel.token).cuda()
@@ -88,6 +88,9 @@ class lstm_NN_baseline(nn.Module):
         lstm_out = lstm_out.view(embeds.size()[0], self.batch_size, self.lstm_hidden_dim)
         lstm_out = lstm_out[temprel.event_ix][:][:]
         h_nn = F.relu(self.h_lstm2h_nn(lstm_out.view(1, -1)))
+        return h_nn
+    def forward(self, temprel):
+        h_nn = self.forward_helper(temprel)
         output = self.h_nn2o(h_nn)
         return output
 

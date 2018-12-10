@@ -1,37 +1,36 @@
 #!/bin/bash
-CUDA_VISIBLE_DEVICES=$1
+CUDA_VISIBLE_DEVICES=0
 name_prefix=lstm
 gamma=0.3
 step=10
 max_epoch=30
 skiptuning=true
-skiptraining=false
-timeline_kb=true
+skiptraining=true
 export OMP_NUM_THREADS=1
 export OPENBLAS_NUM_THREADS=1
 export OPENMP_NUM_THREADS=1
 export MKL_NUM_THREADS=1
-for w2v_option in $2
+for w2v_option in 7
 do
-	for mode in 15
+	for mode in 16
 	do
-		for lr in $3
+		for lr in 0.001
 		do
 			for dropout in false # seems uneffective
 			do
-				for weight_decay in 1e-4
+				for weight_decay in 1e-2
 				do
-					for lstm_hid_dim in 64 128
+					for lstm_hid_dim in 64
 					do
 						for nn_hid_dim in 64
 						do
 							for common_sense_emb_dim in 32
 							do
-								for granularity in 0.2 0.5
+								for granularity in 0.2
 								do
 									for bigramstats_dim in 2
 									do
-										for timeline_kb in true false
+										for timeline_kb in true
 										do
 											EXPNAME=${name_prefix}_w2v${w2v_option}_mode${mode}_hidden${lstm_hid_dim}${nn_hid_dim}_gm${gamma}_step${step}_lr${lr}
 											EXPNAME=${EXPNAME}_csed${common_sense_emb_dim}_gn${granularity}_csdim${bigramstats_dim}
