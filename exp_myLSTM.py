@@ -219,18 +219,23 @@ class bigramGetter_fromLM:
             elif position == 'E2':
                 v2 = temprel.lemma[i]
                 break
-        lstm_outputs = torch.zeros((1, 2*self.emb_size), dtype=torch.float32)
-        if v1 in self.verb_i_map and v2 in self.verb_i_map:
+        lstm_outputs1 = torch.zeros((1, self.emb_size), dtype=torch.float32)
+        lstm_outputs2 = torch.zeros((1, self.emb_size), dtype=torch.float32)
+        if v1 in self.verb_i_map:
             hidden = self.model.init_hidden()
-            lstm_outputs, _ = self.model.lstm(self.model.word_embedding(torch.tensor([[self.verb_i_map[v1], self.verb_i_map[v2]]]).cuda()), hidden)
-            lstm_outputs = lstm_outputs.view(1, -1)
+            lstm_outputs1, _ = self.model.lstm(self.model.word_embedding(torch.tensor([[self.verb_i_map[v1]]]).cuda()), hidden)
+            lstm_outputs1 = lstm_outputs1.view(1, -1)
+        if v2 in self.verb_i_map:
+            hidden = self.model.init_hidden()
+            lstm_outputs2, _ = self.model.lstm(self.model.word_embedding(torch.tensor([[self.verb_i_map[v2]]]).cuda()), hidden)
+            lstm_outputs2 = lstm_outputs2.view(1, -1)
         vec1 = torch.zeros((1, self.emb_size), dtype=torch.float32).cuda()
         vec2 = torch.zeros((1, self.emb_size), dtype=torch.float32).cuda()
         if v1 in self.verb_i_map:
             vec1 = self.model.word_embedding(torch.tensor([self.verb_i_map[v1]]).cuda())
         if v2 in self.verb_i_map:
             vec2 = self.model.word_embedding(torch.tensor([self.verb_i_map[v2]]).cuda())
-        return torch.cat((lstm_outputs, vec1, vec2), dim=1)
+        return torch.cat((lstm_outputs1, lstm_outputs2, vec1, vec2), dim=1)
         """if v1 not in self.verb_i_map or v2 not in self.verb_i_map:
             return torch.zeros((1, 2), dtype=torch.float32)
         score12 = self.model.forward(torch.tensor([[self.verb_i_map[v1]]]).cuda(), torch.tensor([1]).cuda())[0][0][self.verb_i_map[v2]]
@@ -420,7 +425,7 @@ def run(w2v_option, lstm_hid_dim, nn_hid_dim, pos_emb_dim, common_sense_emb_dim,
             bigramGetter = pkl.load(open("/shared/preprocessed/qning2/temporal/TimeLines/temporal_bigram_stats_new_all.pkl", 'rb'))
         else: # temprob KB
             bigramGetter = pkl.load(open("/shared/preprocessed/qning2/temporal/TemProb/temporal_bigram_stats.pkl", 'rb'))
-        model = lstm_NN_bigramStats4(params, emb_cache, bigramGetter, position2ix, granularity=0.1, common_sense_emb_dim=common_sense_emb_dim)
+        model = lstm_NN_bigramStats5(params, emb_cache, bigramGetter, position2ix, granularity=0.1, common_sense_emb_dim=common_sense_emb_dim)
     elif mode == 12: # NN fitted stats from temprob/timelines, categorical embeddings
         ratio = 0.3
         emb_size = 200

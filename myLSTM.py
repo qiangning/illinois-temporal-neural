@@ -356,15 +356,19 @@ class lstm_NN_bigramStats5(nn.Module): # convert bigramstats into categorical em
         return torch.cat((embeddings, position_emb), 1).view(temprel.length, self.batch_size, -1)
 
     def forward(self, temprel):
+        temprel, emb = temprel
         self.init_hidden()
         embeds = self.temprel2embeddingSeq(temprel)
         lstm_out, self.hidden = self.lstm(embeds, self.hidden)
         lstm_out = lstm_out.view(embeds.size()[0], self.batch_size, self.lstm_hidden_dim)
         lstm_out = lstm_out[-1][:][:]
-        bigramstats = self.bigramGetter.getBigramStatsFromTemprel(temprel)
-        common_sense_emb = self.common_sense_emb(torch.cuda.LongTensor([int(bigramstats[0][0]/self.granularity)])).view(1,-1)
+        # bigramstats = self.bigramGetter.getBigramStatsFromTemprel(temprel)
+        bigramstats = torch.exp(emb[0][0])/(torch.exp(emb[0][0])+torch.exp(emb[0][1]))
+        # common_sense_emb = self.common_sense_emb(torch.cuda.LongTensor([int(bigramstats[0][0]/self.granularity)])).view(1,-1)
+        common_sense_emb = self.common_sense_emb(torch.cuda.LongTensor([int(bigramstats/self.granularity)])).view(1,-1)
         h_nn = F.relu(self.h_lstm2h_nn(lstm_out))
-        h_nn2 = F.relu(self.dropout(self.lemma_emb2h_nn(common_sense_emb)))
+        # h_nn2 = F.relu(self.dropout(self.lemma_emb2h_nn(common_sense_emb)))
+        h_nn2 = F.relu(self.lemma_emb2h_nn(common_sense_emb))
         output = self.h_nn2o(torch.cat((h_nn,h_nn2),1))
         return output
 
