@@ -451,6 +451,7 @@ class lstm_NN_embeddings2(nn.Module): # concat differently
         return torch.cat((embeddings, position_emb), 1).view(temprel.length, self.batch_size, -1)
 
     def forward(self, temprel):
+        (temprel, emb) = temprel
         self.init_hidden()
         embeds = self.temprel2embeddingSeq(temprel)
         lstm_out, self.hidden = self.lstm(embeds, self.hidden)
@@ -459,7 +460,8 @@ class lstm_NN_embeddings2(nn.Module): # concat differently
 
         # concat lemma_embeddings to the final layer before output
         h_nn = F.relu(self.h_lstm2h_nn(lstm_out))
-        h_nn2 = F.relu(self.lemma_emb2h_nn(self.lemma_emb_cache.retrieveEmbeddings(temprel)))
+        # h_nn2 = F.relu(self.lemma_emb2h_nn(self.lemma_emb_cache.retrieveEmbeddings(temprel)))
+        h_nn2 = F.relu(self.lemma_emb2h_nn(emb))
         output = self.h_nn2o(torch.cat((h_nn,h_nn2),1)) # concat differently
         return output
 
@@ -482,7 +484,8 @@ class lstm_NN_embeddings3(nn.Module): # dropout
                             num_layers=1, bidirectional=False)
         self.h_lstm2h_nn = nn.Linear(self.lstm_hidden_dim, self.nn_hidden_dim)
         self.dropout = nn.Dropout(0.5)
-        self.lemma_emb2h_nn = nn.Linear(self.lemma_emb_dim, self.nn_hidden_dim)
+        self.lemma_emb2h_nn = nn.Linear(self.lemma_emb_dim, self.nn_hidden_dim*2)
+        self.lemma_emb2h_nn2 = nn.Linear(self.nn_hidden_dim*2, self.nn_hidden_dim)
         self.h_nn2o = nn.Linear(self.nn_hidden_dim*2, self.output_dim)
         self.init_hidden()
     def reset_parameters(self):
@@ -501,6 +504,7 @@ class lstm_NN_embeddings3(nn.Module): # dropout
         return torch.cat((embeddings, position_emb), 1).view(temprel.length, self.batch_size, -1)
 
     def forward(self, temprel):
+        (temprel, probs) = temprel
         self.init_hidden()
         embeds = self.temprel2embeddingSeq(temprel)
         lstm_out, self.hidden = self.lstm(embeds, self.hidden)
@@ -509,7 +513,8 @@ class lstm_NN_embeddings3(nn.Module): # dropout
 
         # concat lemma_embeddings to the final layer before output
         h_nn = F.relu(self.h_lstm2h_nn(lstm_out))
-        h_nn2 = F.relu(self.dropout(self.lemma_emb2h_nn(self.lemma_emb_cache.retrieveEmbeddings(temprel))))
+        h_nn2 = F.relu(self.dropout(self.lemma_emb2h_nn2(F.relu(self.dropout(self.lemma_emb2h_nn(self.lemma_emb_cache.retrieveEmbeddings(temprel)))))))
+        # h_nn2 = F.relu(self.dropout(self.lemma_emb2h_nn(emb)))
         output = self.h_nn2o(torch.cat((h_nn,h_nn2),1)) # concat differently
         return output
 

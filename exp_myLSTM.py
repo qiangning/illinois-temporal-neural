@@ -71,6 +71,8 @@ class experiment:
         # optimizer = optim.SGD(self.model.parameters(), lr=lr, weight_decay=weight_decay)
         optimizer = optim.Adam(self.model.parameters())
         scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=step_size, gamma=gamma)
+        lm_embedding_train = open('/shared/preprocessed/sssubra2/embeddings/models/LanguageModel/lm_pair_probabilities_train3.txt')
+        lm_embedding_train_lines = lm_embedding_train.readlines()
         criterion = nn.CrossEntropyLoss()
         all_train_losses = []
         all_train_accuracies = []
@@ -87,7 +89,8 @@ class experiment:
             for i,temprel in enumerate(trainset):
                 # self.model.zero_grad()
                 target = torch.cuda.LongTensor([self.output_labels[temprel.label]])
-                output = self.model(temprel)
+                embedding = torch.tensor([[float(x) for x in lm_embedding_train_lines[i].split(' ')]]).cuda()
+                output = self.model((temprel, embedding))
                 loss = criterion(output, target)
                 current_train_loss += loss
                 batch_loss += loss
@@ -147,9 +150,12 @@ class experiment:
     def eval(self,eval_on_set):
         was_training = self.model.training
         self.model.eval()
+        lm_embedding_test = open('/shared/preprocessed/sssubra2/embeddings/models/LanguageModel/lm_pair_probabilities_test3.txt')
+        lm_embedding_test_lines = lm_embedding_test.readlines()
         confusion = np.zeros((len(self.output_labels), len(self.output_labels)), dtype=int)
-        for ex in eval_on_set:
-            output = self.model(ex)
+        for ex, line in zip(eval_on_set, lm_embedding_test_lines):
+            emb = torch.tensor([[float(x) for x in line.split(' ')]]).cuda()
+            output = self.model((ex, emb))
             confusion[self.output_labels[ex.label]][categoryFromOutput(output)] += 1
         if was_training:
             self.model.train()
@@ -200,8 +206,8 @@ class bigramGetter_fromLM:
     def __init__(self,mdl_path,all_verbs,emb_size=200):
         self.verb_i_map = {}
         for i in range(len(all_verbs)):
-            self.verb_i_map[all_verbs[i]] = i
-        self.model = BieberLSTM(len(all_verbs), nb_layers=1).cuda()
+            self.verb_i_map[all_verbs[i].decode('utf-8')] = i
+        self.model = BieberLSTM(len(all_verbs), nb_layers=1, batch_size=1).cuda()
         checkpoint = torch.load(mdl_path)
         self.model.load_state_dict(checkpoint['model_state_dict'])
         self.emb_size = emb_size
@@ -213,12 +219,23 @@ class bigramGetter_fromLM:
             elif position == 'E2':
                 v2 = temprel.lemma[i]
                 break
-        if v1 not in self.verb_i_map or v2 not in self.verb_i_map:
-            return torch.zeros((1, 2*self.emb_size), dtype=torch.float32)
-        hidden = self.model.init_hidden()
-        outputs, _ = self.model.lstm(self.model.word_embedding(torch.tensor([self.verb_i_map[v1], self.verb_i_map[v2]]).cuda()), hidden)
-        return outputs.view(1, -1)
-        # return torch.cat(self.model.word_embedding(torch.tensor([self.verb_i_map[v1]]).cuda()), self.model.word_embedding(torch.tensor([self.verb_i_map[v2]]).cuda()), dim=1)
+        lstm_outputs = torch.zeros((1, 2*self.emb_size), dtype=torch.float32)
+        if v1 in self.verb_i_map and v2 in self.verb_i_map:
+            hidden = self.model.init_hidden()
+            lstm_outputs, _ = self.model.lstm(self.model.word_embedding(torch.tensor([[self.verb_i_map[v1], self.verb_i_map[v2]]]).cuda()), hidden)
+            lstm_outputs = lstm_outputs.view(1, -1)
+        vec1 = torch.zeros((1, self.emb_size), dtype=torch.float32).cuda()
+        vec2 = torch.zeros((1, self.emb_size), dtype=torch.float32).cuda()
+        if v1 in self.verb_i_map:
+            vec1 = self.model.word_embedding(torch.tensor([self.verb_i_map[v1]]).cuda())
+        if v2 in self.verb_i_map:
+            vec2 = self.model.word_embedding(torch.tensor([self.verb_i_map[v2]]).cuda())
+        return torch.cat((lstm_outputs, vec1, vec2), dim=1)
+        """if v1 not in self.verb_i_map or v2 not in self.verb_i_map:
+            return torch.zeros((1, 2), dtype=torch.float32)
+        score12 = self.model.forward(torch.tensor([[self.verb_i_map[v1]]]).cuda(), torch.tensor([1]).cuda())[0][0][self.verb_i_map[v2]]
+        score21 = self.model.forward(torch.tensor([[self.verb_i_map[v2]]]).cuda(), torch.tensor([1]).cuda())[0][0][self.verb_i_map[v1]]
+        return torch.tensor([[score12, score21]]).cuda()"""
 
 @click.command()
 @click.option("--w2v_option",default=2)
@@ -284,7 +301,7 @@ def run(w2v_option, lstm_hid_dim, nn_hid_dim, pos_emb_dim, common_sense_emb_dim,
                   'nn_hidden_dim':nn_hid_dim,\
                   'position_emb_dim':pos_emb_dim,\
                   'bigramStats_dim':2,\
-                  'lemma_emb_dim':200,\
+                  'lemma_emb_dim':2,\
                   'dropout':dropout,\
                   'batch_size':1}
     params_optim = {'lr':lr,'weight_decay':weight_decay,'step_size':step_size,'gamma':gamma,'max_epoch':max_epoch}
@@ -444,7 +461,7 @@ def run(w2v_option, lstm_hid_dim, nn_hid_dim, pos_emb_dim, common_sense_emb_dim,
         all_verbs = np.load(all_verbs_path)
         mdl_path = '/shared/preprocessed/sssubra2/embeddings/models/LanguageModel/language_model_emb%d_bilstm%d.pt' % (
             emb_size, hidden_size)
-        params['lemma_emb_dim'] = int(emb_size*2)
+        # params['lemma_emb_dim'] = int(emb_size*2)
         bigramGetter = bigramGetter_fromLM(mdl_path, all_verbs, emb_size)
         model = lstm_NN_embeddings2(params, emb_cache, bigramGetter, position2ix)
     elif mode == 15: # Proposed: with embeddings from LM but put one extra layer after embeddings before concat with the final layer of output
@@ -455,7 +472,7 @@ def run(w2v_option, lstm_hid_dim, nn_hid_dim, pos_emb_dim, common_sense_emb_dim,
         all_verbs = np.load(all_verbs_path)
         mdl_path = '/shared/preprocessed/sssubra2/embeddings/models/LanguageModel/language_model_emb%d_bilstm%d.pt' % (
             emb_size, hidden_size)
-        params['lemma_emb_dim'] = int(emb_size*2)
+        params['lemma_emb_dim'] = int(emb_size*4)
         bigramGetter = bigramGetter_fromLM(mdl_path, all_verbs, emb_size)
         model = lstm_NN_embeddings3(params, emb_cache, bigramGetter, position2ix)
     else:

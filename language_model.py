@@ -93,7 +93,6 @@ class BieberLSTM(nn.Module):
 
         # undo the packing operation
         X, _ = torch.nn.utils.rnn.pad_packed_sequence(X, batch_first=True, total_length=seq_len)
-        print(X.shape)
 
         # ---------------------
         # 3. Project to tag space
