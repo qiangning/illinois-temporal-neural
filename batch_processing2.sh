@@ -1,7 +1,7 @@
 #!/bin/bash
 CUDA_VISIBLE_DEVICES=$1
-name_prefix=$2
-gamma=0.5
+name_prefix=repro
+gamma=0.3
 step=10
 max_epoch=30
 skiptuning=false
@@ -9,19 +9,19 @@ export OMP_NUM_THREADS=1
 export OPENBLAS_NUM_THREADS=1
 export OPENMP_NUM_THREADS=1
 export MKL_NUM_THREADS=1
-for w2v_option in 11
+for w2v_option in 6
 do
-	for mode in -3
+	for mode in -2 -1
 	do
-		for lr in 0.01 0.001
+		for lr in 0.001 0.01
 		do
 			for dropout in false
 			do
 				for weight_decay in 1e-4
 				do
-					for lstm_hid_dim in 256
+					for lstm_hid_dim in 128 64
 					do
-						for nn_hid_dim in 128
+						for nn_hid_dim in 64 32
 						do
 							EXPNAME=${name_prefix}_w2v${w2v_option}_mode${mode}_hidden${lstm_hid_dim}${nn_hid_dim}_gm${gamma}_step${step}_lr${lr}
 							if [ "$dropout" == "true" ]; then

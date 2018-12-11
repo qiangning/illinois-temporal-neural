@@ -1,6 +1,6 @@
 #!/bin/bash
 CUDA_VISIBLE_DEVICES=$1
-name_prefix=$2
+name_prefix=repro
 gamma=0.3
 step=10
 max_epoch=30
@@ -9,20 +9,19 @@ export OMP_NUM_THREADS=1
 export OPENBLAS_NUM_THREADS=1
 export OPENMP_NUM_THREADS=1
 export MKL_NUM_THREADS=1
-# CUDA_VISIBLE_DEVICES=0 python exp_myLSTM.py --w2v_option 2 --lstm_hid_dim 64 --nn_hid_dim 64 --pos_emb_dim 32 --step_size 10 --max_epoch 30 --lr 0.01 --gamma 0.3 --expname lstm_w2v2_mode-2_hidden6464_gm0.3_step10_lr0.01_dropout_wdecay1e-2 --mode -2 --gen_output --dropout --weight_decay 1e-2 > logs/lstm_w2v2_mode-2_hidden6464_gm0.3_step10_lr0.01_dropout_wdecay1e-2.txt
-for w2v_option in 7
+for w2v_option in 5
 do
-	for mode in -2
+	for mode in -2 -1
 	do
-		for lr in 0.01
+		for lr in 0.001 0.01
 		do
-			for dropout in true
+			for dropout in false
 			do
-				for weight_decay in 1e-2
+				for weight_decay in 1e-4
 				do
-					for lstm_hid_dim in 256 128 64
+					for lstm_hid_dim in 128 64
 					do
-						for nn_hid_dim in 64
+						for nn_hid_dim in 64 32
 						do
 							EXPNAME=${name_prefix}_w2v${w2v_option}_mode${mode}_hidden${lstm_hid_dim}${nn_hid_dim}_gm${gamma}_step${step}_lr${lr}
 							if [ "$dropout" == "true" ]; then

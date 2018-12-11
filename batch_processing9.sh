@@ -1,26 +1,26 @@
 #!/bin/bash
-CUDA_VISIBLE_DEVICES=0
-name_prefix=lstm
+CUDA_VISIBLE_DEVICES=$1
+name_prefix=repro
 gamma=0.3
 step=10
 max_epoch=30
-skiptuning=true
-skiptraining=true
+skiptuning=false
+skiptraining=false
 export OMP_NUM_THREADS=1
 export OPENBLAS_NUM_THREADS=1
 export OPENMP_NUM_THREADS=1
 export MKL_NUM_THREADS=1
-for w2v_option in 7
+for w2v_option in 2
 do
 	for mode in 16
 	do
-		for lr in 0.001
+		for lr in 0.01
 		do
 			for dropout in false # seems uneffective
 			do
 				for weight_decay in 1e-2
 				do
-					for lstm_hid_dim in 64
+					for lstm_hid_dim in 128 64
 					do
 						for nn_hid_dim in 64
 						do

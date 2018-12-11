@@ -76,6 +76,10 @@ class experiment:
             print("---Tuned Epoch (%d) Acc=%.4f" %(self.best_epoch,all_test_accuracies[self.best_epoch]))
         print("---Best Epoch (%d) Acc=%.4f" %(best_ix,best_test_acc))
 
+        print("\n\nAwareness eval script (run on jennings)")
+        print("cd ~/Research/illinois-temporal && mvn exec:java -Dexec.mainClass=edu.illinois.cs.cogcomp.temporal.explorations.naacl19_neural.allEvaluations -Dexec.args=\"/home/qning2/Servers/home/Research/illinois-temporal-lstm/output/%s\" > /home/qning2/Servers/home/Research/illinois-temporal-lstm/logs/allMetricEval/%s" %(self.exp_name+".selected.output",self.exp_name+".selected.output"))
+        print("cd ~/Research/illinois-temporal && mvn exec:java -Dexec.mainClass=edu.illinois.cs.cogcomp.temporal.explorations.naacl19_neural.allEvaluations -Dexec.args=\"/home/qning2/Servers/home/Research/illinois-temporal-lstm/output/%s\" > /home/qning2/Servers/home/Research/illinois-temporal-lstm/logs/allMetricEval/%s" %(self.exp_name+".best.output",self.exp_name+".best.output"))
+
 
     def trainHelper(self,trainset,testset,max_epoch,tag):
         self.model.train()
@@ -119,7 +123,7 @@ class experiment:
                 optimizer.step()
             all_train_losses.append(current_train_loss)
             current_train_acc, _, _ = self.eval(trainset)
-            current_test_acc, confusion, _ = self.eval(testset)
+            current_test_acc, confusion, curr_output = self.eval(testset,True)
             all_train_accuracies.append(float(current_train_acc))
             all_test_accuracies.append(float(current_test_acc))
             print("Loss at epoch %d: %.4f" % (epoch, current_train_loss), flush=True)
@@ -137,6 +141,7 @@ class experiment:
                         'scheduler_state_dict': scheduler.state_dict(),
                         'loss': loss
                     }, self.modelPath+"_selected")
+                    self.writeoutput(os.path.join("./output",self.exp_name+".selected.output"),curr_output)
                 elif epoch==max_epoch-1:
                     torch.save({
                         'epoch': epoch,
@@ -145,6 +150,7 @@ class experiment:
                         'scheduler_state_dict': scheduler.state_dict(),
                         'loss': loss
                     }, self.modelPath + "_max")
+                    self.writeoutput(os.path.join("./output",self.exp_name+".max.output"),curr_output)
                 elif prev_best_test_acc<current_test_acc:
                     torch.save({
                         'epoch': epoch,
@@ -153,6 +159,7 @@ class experiment:
                         'scheduler_state_dict': scheduler.state_dict(),
                         'loss': loss
                     }, self.modelPath + "_best")
+                    self.writeoutput(os.path.join("./output",self.exp_name+".best.output"),curr_output)
             if prev_best_test_acc<current_test_acc:
                 prev_best_test_acc = current_test_acc
             # plot figures
@@ -181,6 +188,13 @@ class experiment:
             plt.close('all')
         return all_train_losses,all_train_accuracies,all_test_accuracies
 
+    def writeoutput(self,write2path,output):
+        f = open(write2path, 'w')
+        for docid in output:
+            for pairkey in output[docid]:
+                f.write("%s,%s,%s\n" \
+                        % (docid, pairkey, output[docid][pairkey]))
+        f.close()
     def test(self):
         self.model.eval()
         test_acc, test_confusion, test_output = self.eval(self.testset,self.gen_output)
@@ -188,12 +202,7 @@ class experiment:
         print("CONFUSION MAT:")
         print(test_confusion)
         if self.gen_output:
-            f = open(os.path.join("./output",self.exp_name+".output"),'w')
-            for docid in test_output:
-                for pairkey in test_output[docid]:
-                    f.write("%s,%s,%s\n" \
-                            %(docid,pairkey,test_output[docid][pairkey]))
-            f.close()
+            self.writeoutput(os.path.join("./output",self.exp_name+".output"),test_output)
 
     def eval(self,eval_on_set, gen_output=False):
         was_training = self.model.training
