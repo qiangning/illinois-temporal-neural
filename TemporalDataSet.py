@@ -5,6 +5,9 @@ class temprel_ee:
         self.xml_element = xml_element
         self.label = xml_element.attrib['LABEL']
         self.sentdiff = int(xml_element.attrib['SENTDIFF'])
+        self.docid = xml_element.attrib['DOCID']
+        self.source = xml_element.attrib['SOURCE']
+        self.target = xml_element.attrib['TARGET']
         self.data = xml_element.text.strip().split()
         self.token = []
         self.lemma = []

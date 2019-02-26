@@ -20,7 +20,7 @@ do
 		echo nn_hid_dim=$(($size*64))
 		echo pos_emb_dim=$(($size*32))
 		echo expname=$EXPNAME
-		CMD="CUDA_VISIBLE_DEVICES=$CUDA_VISIBLE_DEVICES python exp_myLSTM.py --w2v_option $w2v_option --lstm_hid_dim $(($size*128)) --nn_hid_dim $(($size*64)) --cnn_filter_sizes 5,10,15 --cnn_filter_num $filter_num --pos_emb_dim $(($size*32)) --step_size $step --max_epoch $max_epoch --lr $lr --gamma $gamma --expname $EXPNAME --mode 14 > logs/$EXPNAME.txt"
+		CMD="CUDA_VISIBLE_DEVICES=$CUDA_VISIBLE_DEVICES python exp_myLSTM.py --w2v_option $w2v_option --lstm_hid_dim $(($size*128)) --nn_hid_dim $(($size*64)) --cnn_filter_sizes 3,6 --cnn_filter_num $filter_num --pos_emb_dim $(($size*32)) --step_size $step --max_epoch $max_epoch --lr $lr --gamma $gamma --expname $EXPNAME --mode 17 > logs/$EXPNAME.txt"
 		echo Running: $CMD
 		eval $CMD
 	done
