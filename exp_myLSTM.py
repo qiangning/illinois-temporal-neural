@@ -20,12 +20,13 @@ from WordEmbeddings_Cache import *
 from TemporalDataSet import *
 from LemmaEmbeddings import *
 from myLSTM import *
+from myCNN import *
 from Baseline_LSTM import *
 from extract_bigram_stats import temporal_bigram
 from pairwise_ffnn_pytorch import VerbNet
 
 class experiment:
-    def __init__(self,model,trainset,testset,output_labels,params,exp_name,modelPath,skiptuning):
+    def __init__(self,model,trainset,testset,output_labels,params,exp_name,modelPath,skiptuning, batch_size):
         self.model = model
         self.params = params
         self.trainset, self.devset = self.split_train_dev(trainset)
@@ -34,6 +35,7 @@ class experiment:
         self.exp_name = exp_name
         self.modelPath = "%s_%s" %(modelPath,self.exp_name)
         self.skiptuning = skiptuning
+        self.batch_size = batch_size
 
     def split_train_dev(self,trainset):
         train,dev = train_test_split(trainset,test_size=0.2,random_state=self.params.get('seed',2093))
@@ -79,16 +81,21 @@ class experiment:
             current_train_loss = 0
             random.shuffle(trainset)
             scheduler.step()
+            batch_loss = 0
+            self.model.zero_grad()
             for i,temprel in enumerate(trainset):
-                self.model.zero_grad()
+                # self.model.zero_grad()
                 target = torch.cuda.LongTensor([self.output_labels[temprel.label]])
                 output = self.model(temprel)
                 loss = criterion(output, target)
                 current_train_loss += loss
+                batch_loss += loss
                 if i % 1000 == 0:
                     print("%d/%d: %s %.4f %.4f" % (i, len(trainset), timeSince(start), loss, current_train_loss), flush=True)
-                loss.backward()
-                optimizer.step()
+                if (i+1) % self.batch_size == 0:
+                    batch_loss.backward()
+                    optimizer.step()
+                    self.model.zero_grad()
             all_train_losses.append(current_train_loss)
             current_train_acc, _ = self.eval(trainset)
             current_test_acc, confusion = self.eval(testset)
@@ -193,6 +200,8 @@ class bigramGetter_fromNN:
 @click.option("--nn_hid_dim",default=64)
 @click.option("--pos_emb_dim",default=32)
 @click.option("--common_sense_emb_dim",default=64)
+@click.option("--cnn_filter_sizes", default="5,10,15")
+@click.option("--cnn_filter_num", default=2)
 @click.option("--lr",default=0.1)
 @click.option("--weight_decay",default=1e-4)
 @click.option("--step_size",default=10)
@@ -204,43 +213,44 @@ class bigramGetter_fromNN:
 @click.option("--dropout", is_flag=True)
 @click.option("--timeline_kb", is_flag=True)
 @click.option("--debug",is_flag=True)
-def run(w2v_option, lstm_hid_dim, nn_hid_dim, pos_emb_dim, common_sense_emb_dim, lr, weight_decay, step_size, gamma, max_epoch, expname, skiptuning, mode, dropout, timeline_kb, debug):
+@click.option("--batch_size", default=1)
+def run(w2v_option, lstm_hid_dim, nn_hid_dim, pos_emb_dim, common_sense_emb_dim, cnn_filter_sizes, cnn_filter_num, lr, weight_decay, step_size, gamma, max_epoch, expname, skiptuning, mode, dropout, timeline_kb, debug, batch_size):
 
-    trainset = temprel_set("data/Output4LSTM_Baseline/trainset.xml")
-    testset = temprel_set("data/Output4LSTM_Baseline/testset.xml")
+    trainset = temprel_set("data/Output4LSTM_Baseline/trainset-temprel.xml")
+    testset = temprel_set("data/Output4LSTM_Baseline/testset-temprel.xml")
 
     if w2v_option == 0:
         embedding_dim = 256
         print("Using ELMo (small)")
-        emb_cache = elmo_cache(None, "ser/elmo_cache_small.pkl", verbose=False)
+        emb_cache = elmo_cache(None, "/shared/preprocessed/qning2/temporal/ser/elmo_cache_small.pkl", verbose=False)
     elif w2v_option == 1:
         embedding_dim = 512
         print("Using ELMo (medium)")
-        emb_cache = elmo_cache(None, "ser/elmo_cache_medium.pkl", verbose=False)
+        emb_cache = elmo_cache(None, "/shared/preprocessed/qning2/temporal/ser/elmo_cache_medium.pkl", verbose=False)
     elif w2v_option == 2:
         embedding_dim = 1024
         print("Using ELMo (original)")
-        emb_cache = elmo_cache(None, "ser/elmo_cache_original.pkl", verbose=False)
+        emb_cache = elmo_cache(None, "/shared/preprocessed/sssubra2/elmo_cache_original.pkl", verbose=False)
     elif w2v_option == 3:
         embedding_dim = 300
         print("glove.6B.300d-light.magnitude")
-        emb_cache = w2v_cache(None, "ser/w2v_cache_glove.6B.300d-light.magnitude.pkl", verbose=False)
+        emb_cache = w2v_cache(None, "/shared/preprocessed/qning2/temporal/ser/w2v_cache_glove.6B.300d-light.magnitude.pkl", verbose=False)
     elif w2v_option == 4:
         embedding_dim = 300
         print("glove.6B.300d-medium.magnitude")
-        emb_cache = w2v_cache(None, "ser/w2v_cache_glove.6B.300d-medium.magnitude.pkl", verbose=False)
+        emb_cache = w2v_cache(None, "/shared/preprocessed/qning2/temporal/ser/w2v_cache_glove.6B.300d-medium.magnitude.pkl", verbose=False)
     elif w2v_option == 5:
         embedding_dim = 300
         print("wiki-news-300d-1M-medium.magnitude")
-        emb_cache = w2v_cache(None, "ser/w2v_cache_wiki-news-300d-1M-medium.magnitude.pkl", verbose=False)
+        emb_cache = w2v_cache(None, "/shared/preprocessed/qning2/temporal/ser/w2v_cache_wiki-news-300d-1M-medium.magnitude.pkl", verbose=False)
     elif w2v_option == 6:
         embedding_dim = 300
         print("GoogleNews-vectors-negative300-medium.magnitude")
-        emb_cache = w2v_cache(None, "ser/w2v_cache_GoogleNews-vectors-negative300-medium.magnitude.pkl", verbose=False)
+        emb_cache = w2v_cache(None, "/shared/preprocessed/qning2/temporal/ser/w2v_cache_GoogleNews-vectors-negative300-medium.magnitude.pkl", verbose=False)
     else:
         print("word embedding option is wrong (%d)." % w2v_option)
         embedding_dim = 256
-        emb_cache = elmo_cache(None, "ser/elmo_cache_small.pkl", verbose=False)
+        emb_cache = elmo_cache(None, "/shared/preprocessed/qning2/temporal/ser/elmo_cache_small.pkl", verbose=False)
 
     position2ix = {"B":0,"M":1,"A":2,"E1":3,"E2":4}
     output_labels = {"BEFORE":0,"AFTER":1,"EQUAL":2,"VAGUE":3}
@@ -251,6 +261,8 @@ def run(w2v_option, lstm_hid_dim, nn_hid_dim, pos_emb_dim, common_sense_emb_dim,
                   'position_emb_dim':pos_emb_dim,\
                   'bigramStats_dim':2,\
                   'lemma_emb_dim':200,\
+                  'cnn_filter_sizes':[int(s) for s in cnn_filter_sizes.split(',')],\
+                  'cnn_filter_num':cnn_filter_num,\
                   'dropout':dropout,\
                   'batch_size':1}
     params_optim = {'lr':lr,'weight_decay':weight_decay,'step_size':step_size,'gamma':gamma,'max_epoch':max_epoch}
@@ -402,6 +414,22 @@ def run(w2v_option, lstm_hid_dim, nn_hid_dim, pos_emb_dim, common_sense_emb_dim,
         print("ratio=%s,emb_size=%d,layer=%d,lemma_emb_dim=%d" % (str(ratio), emb_size, layer, params['lemma_emb_dim']))
         bigramGetter = bigramGetter_fromNN(emb_path, mdl_path, ratio, layer, emb_size, splitter=',')
         model = lstm_NN_bigramStats4(params, emb_cache, bigramGetter, position2ix, granularity=0.1, common_sense_emb_dim=common_sense_emb_dim)
+    elif mode == 14: # mode=14 with dropout for common sense embeddings
+        ratio = 0.3
+        emb_size = 200
+        layer = 1
+        print("---------")
+        emb_path = '/shared/preprocessed/sssubra2/embeddings/models/TemProb/embeddings_%.1f_%d_%d_temprob.txt' % (
+            ratio, emb_size, layer)
+        mdl_path = '/shared/preprocessed/sssubra2/embeddings/models/TemProb/pairwise_model_%.1f_%d_%d_TemProb.pt' % (
+            ratio, emb_size, layer)
+        if layer == 1:
+            params['lemma_emb_dim'] = int(emb_size * 2 * ratio)
+        elif layer == 2:
+            params['lemma_emb_dim'] = int(emb_size * 2 * ratio) + int(emb_size * ratio)
+        print("ratio=%s,emb_size=%d,layer=%d,lemma_emb_dim=%d" % (str(ratio), emb_size, layer, params['lemma_emb_dim']))
+        bigramGetter = bigramGetter_fromNN(emb_path, mdl_path, ratio, layer, emb_size, splitter=',')
+        model = CNN_bigramStats(params, emb_cache, bigramGetter, position2ix)
     else:
         print('Error! No such mode: %d' %mode)
         sys.exit(-1)
