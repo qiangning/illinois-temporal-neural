@@ -5,7 +5,7 @@ import torch.nn.functional as F
 torch.set_default_tensor_type('torch.cuda.FloatTensor')
 
 class lstm_NN_position_embedding(nn.Module):
-    def __init__(self, params,emb_cache,position2ix,bidirectional=False):
+    def __init__(self, params,emb_cache,position2ix,bidirectional=False, lowerCase=False):
         super(lstm_NN_position_embedding, self).__init__()
         self.params = params
         self.embedding_dim = params.get('embedding_dim')
@@ -18,6 +18,7 @@ class lstm_NN_position_embedding(nn.Module):
         self.position2ix = position2ix
         self.position_emb = nn.Embedding(len(position2ix), self.position_emb_dim)
         self.bidirectional = bidirectional
+        self.lowerCase = lowerCase
         if self.bidirectional:
             self.lstm = nn.LSTM(self.embedding_dim + self.position_emb_dim, self.lstm_hidden_dim // 2,\
                                 num_layers=1, bidirectional=True)
@@ -34,14 +35,17 @@ class lstm_NN_position_embedding(nn.Module):
         # self.position_emb.reset_parameters()
     def init_hidden(self):
         if self.bidirectional:
-            self.hidden = (torch.randn(2 * self.lstm.num_layers, self.batch_size, self.hidden_dim // 2),\
-                           torch.randn(2 * self.lstm.num_layers, self.batch_size, self.hidden_dim // 2))
+            self.hidden = (torch.randn(2 * self.lstm.num_layers, self.batch_size, self.lstm_hidden_dim // 2),\
+                           torch.randn(2 * self.lstm.num_layers, self.batch_size, self.lstm_hidden_dim // 2))
         else:
             self.hidden = (torch.randn(1 * self.lstm.num_layers, self.batch_size, self.lstm_hidden_dim),\
                            torch.randn(1 * self.lstm.num_layers, self.batch_size, self.lstm_hidden_dim))
 
     def temprel2embeddingSeq(self, temprel):
-        embeddings = self.emb_cache.retrieveEmbeddings(tokList=temprel.token).cuda()
+        if not self.lowerCase:
+            embeddings = self.emb_cache.retrieveEmbeddings(tokList=temprel.token).cuda()
+        else:
+            embeddings = self.emb_cache.retrieveEmbeddings(tokList=[x.lower() for x in temprel.token]).cuda()
         position_emb = self.position_emb(torch.cuda.LongTensor([self.position2ix[t] for t in temprel.position]))
         return torch.cat((embeddings, position_emb), 1).view(temprel.length, self.batch_size, -1)
 
@@ -87,8 +91,8 @@ class lstm_NN_bigramStats(nn.Module):
         self.position_emb.reset_parameters()
     def init_hidden(self):
         if self.bidirectional:
-            self.hidden = (torch.randn(2 * self.lstm.num_layers, self.batch_size, self.hidden_dim // 2),\
-                           torch.randn(2 * self.lstm.num_layers, self.batch_size, self.hidden_dim // 2))
+            self.hidden = (torch.randn(2 * self.lstm.num_layers, self.batch_size, self.lstm_hidden_dim // 2),\
+                           torch.randn(2 * self.lstm.num_layers, self.batch_size, self.lstm_hidden_dim // 2))
         else:
             self.hidden = (torch.randn(1 * self.lstm.num_layers, self.batch_size, self.lstm_hidden_dim),\
                            torch.randn(1 * self.lstm.num_layers, self.batch_size, self.lstm_hidden_dim))
@@ -146,8 +150,8 @@ class lstm_NN_bigramStats2(nn.Module): # convert bigramstats into categorical em
         self.common_sense_emb.reset_parameters()
     def init_hidden(self):
         if self.bidirectional:
-            self.hidden = (torch.randn(2 * self.lstm.num_layers, self.batch_size, self.hidden_dim // 2),\
-                           torch.randn(2 * self.lstm.num_layers, self.batch_size, self.hidden_dim // 2))
+            self.hidden = (torch.randn(2 * self.lstm.num_layers, self.batch_size, self.lstm_hidden_dim // 2),\
+                           torch.randn(2 * self.lstm.num_layers, self.batch_size, self.lstm_hidden_dim // 2))
         else:
             self.hidden = (torch.randn(1 * self.lstm.num_layers, self.batch_size, self.lstm_hidden_dim),\
                            torch.randn(1 * self.lstm.num_layers, self.batch_size, self.lstm_hidden_dim))
@@ -210,8 +214,8 @@ class lstm_NN_bigramStats3(nn.Module): # convert bigramstats into categorical em
         self.common_sense_emb.reset_parameters()
     def init_hidden(self):
         if self.bidirectional:
-            self.hidden = (torch.randn(2 * self.lstm.num_layers, self.batch_size, self.hidden_dim // 2),\
-                           torch.randn(2 * self.lstm.num_layers, self.batch_size, self.hidden_dim // 2))
+            self.hidden = (torch.randn(2 * self.lstm.num_layers, self.batch_size, self.lstm_hidden_dim // 2),\
+                           torch.randn(2 * self.lstm.num_layers, self.batch_size, self.lstm_hidden_dim // 2))
         else:
             self.hidden = (torch.randn(1 * self.lstm.num_layers, self.batch_size, self.lstm_hidden_dim),\
                            torch.randn(1 * self.lstm.num_layers, self.batch_size, self.lstm_hidden_dim))
@@ -233,6 +237,250 @@ class lstm_NN_bigramStats3(nn.Module): # convert bigramstats into categorical em
             h_nn = F.relu(self.dropout(self.h_lstm2h_nn(lstm_out)))
         else:
             h_nn = F.relu(self.h_lstm2h_nn(lstm_out))
+        output = self.h_nn2o(torch.cat((h_nn,common_sense_emb),1))
+        return output
+
+class lstm_NN_baseline_bigramStats3(nn.Module): # combination of mode -1 and mode 10
+    def __init__(self, params,emb_cache,bigramGetter,granularity=0.05, common_sense_emb_dim=64,bidirectional=False,lowerCase=False):
+        super(lstm_NN_baseline_bigramStats3, self).__init__()
+        self.params = params
+        self.embedding_dim = params.get('embedding_dim')
+        self.lstm_hidden_dim = params.get('lstm_hidden_dim',64)
+        self.nn_hidden_dim = params.get('nn_hidden_dim',32)
+        self.bigramStats_dim = params.get('bigramStats_dim')
+        self.emb_cache = emb_cache
+        self.bigramGetter = bigramGetter
+        self.output_dim = params.get('output_dim',4)
+        self.batch_size = params.get('batch_size',1)
+        self.granularity = granularity
+        self.common_sense_emb_dim = common_sense_emb_dim
+        self.common_sense_emb = nn.Embedding(int(1.0/self.granularity)*self.bigramStats_dim,self.common_sense_emb_dim)
+        self.bidirectional = bidirectional
+        self.lowerCase = lowerCase
+        if self.bidirectional:
+            self.lstm = nn.LSTM(self.embedding_dim, self.lstm_hidden_dim // 2,\
+                                num_layers=1, bidirectional=True)
+        else:
+            self.lstm = nn.LSTM(self.embedding_dim, self.lstm_hidden_dim,\
+                                num_layers=1, bidirectional=False)
+        self.h_lstm2h_nn = nn.Linear(2*self.lstm_hidden_dim, self.nn_hidden_dim)
+        self.h_nn2o = nn.Linear(self.nn_hidden_dim+self.bigramStats_dim*self.common_sense_emb_dim, self.output_dim)
+        self.init_hidden()
+    def reset_parameters(self):
+        self.lstm.reset_parameters()
+        self.h_lstm2h_nn.reset_parameters()
+        self.h_nn2o.reset_parameters()
+        self.common_sense_emb.reset_parameters()
+    def init_hidden(self):
+        if self.bidirectional:
+            self.hidden = (torch.randn(2 * self.lstm.num_layers, self.batch_size, self.lstm_hidden_dim // 2),\
+                           torch.randn(2 * self.lstm.num_layers, self.batch_size, self.lstm_hidden_dim // 2))
+        else:
+            self.hidden = (torch.randn(1 * self.lstm.num_layers, self.batch_size, self.lstm_hidden_dim),\
+                           torch.randn(1 * self.lstm.num_layers, self.batch_size, self.lstm_hidden_dim))
+
+    def forward(self, temprel):
+        self.init_hidden()
+        if not self.lowerCase:
+            embeds = self.emb_cache.retrieveEmbeddings(tokList=temprel.token).cuda()
+        else:
+            embeds = self.emb_cache.retrieveEmbeddings(tokList=[x.lower() for x in temprel.token]).cuda()
+        embeds = embeds.view(temprel.length,self.batch_size,-1)
+        lstm_out, self.hidden = self.lstm(embeds, self.hidden)
+        lstm_out = lstm_out.view(embeds.size()[0], self.batch_size, self.lstm_hidden_dim)
+        lstm_out = lstm_out[temprel.event_ix][:][:]
+        h_nn = F.relu(self.h_lstm2h_nn(lstm_out.view(1,-1)))
+
+        bigramstats = self.bigramGetter.getBigramStatsFromTemprel(temprel)
+        common_sense_emb = self.common_sense_emb(torch.cuda.LongTensor([min(int(1.0/self.granularity)-1,int(bigramstats[0][0]/self.granularity))])).view(1,-1)
+        for i in range(1,self.bigramStats_dim):
+            tmp = self.common_sense_emb(torch.cuda.LongTensor([(i-1)*int(1.0/self.granularity)+min(int(1.0/self.granularity)-1,int(bigramstats[0][i]/self.granularity))])).view(1,-1)
+            common_sense_emb = torch.cat((common_sense_emb,tmp),1)
+
+        output = self.h_nn2o(torch.cat((h_nn,common_sense_emb),1))
+        return output
+
+class lstm_NN_baseline_bigramStats4(nn.Module): # add categorical emb to two places instead of one
+    def __init__(self, params,emb_cache,bigramGetter,granularity=0.05, common_sense_emb_dim=64,bidirectional=False,lowerCase=False,dropout=False):
+        super(lstm_NN_baseline_bigramStats4, self).__init__()
+        self.params = params
+        self.embedding_dim = params.get('embedding_dim')
+        self.lstm_hidden_dim = params.get('lstm_hidden_dim',64)
+        self.nn_hidden_dim = params.get('nn_hidden_dim',32)
+        self.bigramStats_dim = params.get('bigramStats_dim')
+        self.emb_cache = emb_cache
+        self.bigramGetter = bigramGetter
+        self.output_dim = params.get('output_dim',4)
+        self.batch_size = params.get('batch_size',1)
+        self.granularity = granularity
+        self.common_sense_emb_dim = common_sense_emb_dim
+        self.common_sense_emb = nn.Embedding(int(1.0/self.granularity)*self.bigramStats_dim,self.common_sense_emb_dim)
+        self.bidirectional = bidirectional
+        self.lowerCase = lowerCase
+        self.dropout = dropout
+        self.dropout_prob = 0.2
+        self.dropout_layer = nn.Dropout(p=self.dropout_prob)
+        if self.bidirectional:
+            self.lstm = nn.LSTM(self.embedding_dim, self.lstm_hidden_dim // 2,\
+                                num_layers=1, bidirectional=True)
+        else:
+            self.lstm = nn.LSTM(self.embedding_dim, self.lstm_hidden_dim,\
+                                num_layers=1, bidirectional=False)
+        self.h_lstm2h_nn = nn.Linear(2*self.lstm_hidden_dim+self.bigramStats_dim*self.common_sense_emb_dim, self.nn_hidden_dim)
+        self.h_nn2o = nn.Linear(self.nn_hidden_dim+self.bigramStats_dim*self.common_sense_emb_dim, self.output_dim)
+        self.init_hidden()
+    def reset_parameters(self):
+        self.lstm.reset_parameters()
+        self.h_lstm2h_nn.reset_parameters()
+        self.h_nn2o.reset_parameters()
+    def init_hidden(self):
+        if self.bidirectional:
+            self.hidden = (torch.randn(2 * self.lstm.num_layers, self.batch_size, self.lstm_hidden_dim // 2),\
+                           torch.randn(2 * self.lstm.num_layers, self.batch_size, self.lstm_hidden_dim // 2))
+        else:
+            self.hidden = (torch.randn(1 * self.lstm.num_layers, self.batch_size, self.lstm_hidden_dim),\
+                           torch.randn(1 * self.lstm.num_layers, self.batch_size, self.lstm_hidden_dim))
+
+    def forward(self, temprel):
+        self.init_hidden()
+
+        # common sense embeddings
+        bigramstats = self.bigramGetter.getBigramStatsFromTemprel(temprel)
+        common_sense_emb = self.common_sense_emb(torch.cuda.LongTensor(
+            [min(int(1.0 / self.granularity) - 1, int(bigramstats[0][0] / self.granularity))])).view(1, -1)
+        for i in range(1, self.bigramStats_dim):
+            tmp = self.common_sense_emb(torch.cuda.LongTensor([(i - 1) * int(1.0 / self.granularity) + min(
+                int(1.0 / self.granularity) - 1, int(bigramstats[0][i] / self.granularity))])).view(1, -1)
+            common_sense_emb = torch.cat((common_sense_emb, tmp), 1)
+
+        if not self.lowerCase:
+            embeds = self.emb_cache.retrieveEmbeddings(tokList=temprel.token).cuda()
+        else:
+            embeds = self.emb_cache.retrieveEmbeddings(tokList=[x.lower() for x in temprel.token]).cuda()
+        embeds = embeds.view(temprel.length,self.batch_size,-1)
+        lstm_out, self.hidden = self.lstm(embeds, self.hidden)
+        lstm_out = lstm_out.view(embeds.size()[0], self.batch_size, self.lstm_hidden_dim)
+        lstm_out = lstm_out[temprel.event_ix][:][:]
+        h_nn = F.relu(self.h_lstm2h_nn(torch.cat((lstm_out.view(1,-1),common_sense_emb),1)))
+        if self.dropout:
+            h_nn = self.dropout_layer(h_nn)
+        output = self.h_nn2o(torch.cat((h_nn,common_sense_emb),1))
+        return output
+
+class lstm_NN_baseline_bigramStats5(nn.Module): # add categorical emb to two places instead of one
+    def __init__(self, params,emb_cache,bigramGetter,bidirectional=False,lowerCase=False):
+        super(lstm_NN_baseline_bigramStats5, self).__init__()
+        self.params = params
+        self.embedding_dim = params.get('embedding_dim')
+        self.lstm_hidden_dim = params.get('lstm_hidden_dim',64)
+        self.nn_hidden_dim = params.get('nn_hidden_dim',32)
+        self.bigramStats_dim = params.get('bigramStats_dim')
+        self.emb_cache = emb_cache
+        self.bigramGetter = bigramGetter
+        self.output_dim = params.get('output_dim',4)
+        self.batch_size = params.get('batch_size',1)
+        self.bidirectional = bidirectional
+        self.lowerCase = lowerCase
+        if self.bidirectional:
+            self.lstm = nn.LSTM(self.embedding_dim, self.lstm_hidden_dim // 2,\
+                                num_layers=1, bidirectional=True)
+        else:
+            self.lstm = nn.LSTM(self.embedding_dim, self.lstm_hidden_dim,\
+                                num_layers=1, bidirectional=False)
+        self.h_lstm2h_nn = nn.Linear(2*self.lstm_hidden_dim+self.bigramStats_dim, self.nn_hidden_dim)
+        self.h_nn2o = nn.Linear(self.nn_hidden_dim+self.bigramStats_dim, self.output_dim)
+        self.init_hidden()
+    def reset_parameters(self):
+        self.lstm.reset_parameters()
+        self.h_lstm2h_nn.reset_parameters()
+        self.h_nn2o.reset_parameters()
+    def init_hidden(self):
+        if self.bidirectional:
+            self.hidden = (torch.randn(2 * self.lstm.num_layers, self.batch_size, self.lstm_hidden_dim // 2),\
+                           torch.randn(2 * self.lstm.num_layers, self.batch_size, self.lstm_hidden_dim // 2))
+        else:
+            self.hidden = (torch.randn(1 * self.lstm.num_layers, self.batch_size, self.lstm_hidden_dim),\
+                           torch.randn(1 * self.lstm.num_layers, self.batch_size, self.lstm_hidden_dim))
+
+    def forward(self, temprel):
+        self.init_hidden()
+
+        # common sense embeddings
+        bigramstats = self.bigramGetter.getBigramStatsFromTemprel(temprel)
+
+        if not self.lowerCase:
+            embeds = self.emb_cache.retrieveEmbeddings(tokList=temprel.token).cuda()
+        else:
+            embeds = self.emb_cache.retrieveEmbeddings(tokList=[x.lower() for x in temprel.token]).cuda()
+        embeds = embeds.view(temprel.length,self.batch_size,-1)
+        lstm_out, self.hidden = self.lstm(embeds, self.hidden)
+        lstm_out = lstm_out.view(embeds.size()[0], self.batch_size, self.lstm_hidden_dim)
+        lstm_out = lstm_out[temprel.event_ix][:][:]
+        h_nn = F.relu(self.h_lstm2h_nn(torch.cat((lstm_out.view(1,-1),bigramstats),1)))
+        output = self.h_nn2o(torch.cat((h_nn,bigramstats),1))
+        return output
+
+class lstm_NN_baseline_bigramStats6(nn.Module): # add categorical emb to two places instead of one
+    def __init__(self, params,emb_cache,bigramGetter,granularity=0.05, common_sense_emb_dim=64,bidirectional=False,lowerCase=False,dropout=False):
+        super(lstm_NN_baseline_bigramStats6, self).__init__()
+        self.params = params
+        self.embedding_dim = params.get('embedding_dim')
+        self.lstm_hidden_dim = params.get('lstm_hidden_dim',64)
+        self.nn_hidden_dim = params.get('nn_hidden_dim',32)
+        self.bigramStats_dim = params.get('bigramStats_dim')
+        self.emb_cache = emb_cache
+        self.bigramGetter = bigramGetter
+        self.output_dim = params.get('output_dim',4)
+        self.batch_size = params.get('batch_size',1)
+        self.granularity = granularity
+        self.common_sense_emb_dim = 1
+        self.common_sense_emb = nn.Embedding(int(1.0/self.granularity)*self.bigramStats_dim,self.common_sense_emb_dim)
+        self.bidirectional = bidirectional
+        self.lowerCase = lowerCase
+        self.dropout = dropout
+        self.dropout_prob = 0.2
+        self.dropout_layer = nn.Dropout(p=self.dropout_prob)
+        if self.bidirectional:
+            self.lstm = nn.LSTM(self.embedding_dim, self.lstm_hidden_dim // 2,\
+                                num_layers=1, bidirectional=True)
+        else:
+            self.lstm = nn.LSTM(self.embedding_dim, self.lstm_hidden_dim,\
+                                num_layers=1, bidirectional=False)
+        self.h_lstm2h_nn = nn.Linear(2*self.lstm_hidden_dim+self.bigramStats_dim*self.common_sense_emb_dim, self.nn_hidden_dim)
+        self.h_nn2o = nn.Linear(self.nn_hidden_dim+self.bigramStats_dim*self.common_sense_emb_dim, self.output_dim)
+        self.init_hidden()
+    def reset_parameters(self):
+        self.lstm.reset_parameters()
+        self.h_lstm2h_nn.reset_parameters()
+        self.h_nn2o.reset_parameters()
+    def init_hidden(self):
+        if self.bidirectional:
+            self.hidden = (torch.randn(2 * self.lstm.num_layers, self.batch_size, self.lstm_hidden_dim // 2),\
+                           torch.randn(2 * self.lstm.num_layers, self.batch_size, self.lstm_hidden_dim // 2))
+        else:
+            self.hidden = (torch.randn(1 * self.lstm.num_layers, self.batch_size, self.lstm_hidden_dim),\
+                           torch.randn(1 * self.lstm.num_layers, self.batch_size, self.lstm_hidden_dim))
+
+    def forward(self, temprel):
+        self.init_hidden()
+
+        # common sense embeddings
+        bigramstats = self.bigramGetter.getBigramStatsFromTemprel(temprel)
+        
+        if not self.lowerCase:
+            embeds = self.emb_cache.retrieveEmbeddings(tokList=temprel.token).cuda()
+        else:
+            embeds = self.emb_cache.retrieveEmbeddings(tokList=[x.lower() for x in temprel.token]).cuda()
+        embeds = embeds.view(temprel.length,self.batch_size,-1)
+        lstm_out, self.hidden = self.lstm(embeds, self.hidden)
+        lstm_out = lstm_out.view(embeds.size()[0], self.batch_size, self.lstm_hidden_dim)
+        lstm_out = lstm_out[temprel.event_ix][:][:]
+        common_sense_emb = torch.cuda.FloatTensor([bigramstats[0][0]]).view(1, -1)
+        for i in range(1, self.bigramStats_dim):
+            common_sense_emb = torch.cat((common_sense_emb, torch.cuda.FloatTensor([bigramstats[0][i]]).view(1, -1)), 1)
+        h_nn = F.relu(self.h_lstm2h_nn(torch.cat((lstm_out.view(1,-1),common_sense_emb),1)))
+        if self.dropout:
+            h_nn = self.dropout_layer(h_nn)
         output = self.h_nn2o(torch.cat((h_nn,common_sense_emb),1))
         return output
 
@@ -278,8 +526,8 @@ class lstm_NN_bigramStats4(nn.Module): # convert bigramstats into categorical em
         self.common_sense_emb.reset_parameters()
     def init_hidden(self):
         if self.bidirectional:
-            self.hidden = (torch.randn(2 * self.lstm.num_layers, self.batch_size, self.hidden_dim // 2),\
-                           torch.randn(2 * self.lstm.num_layers, self.batch_size, self.hidden_dim // 2))
+            self.hidden = (torch.randn(2 * self.lstm.num_layers, self.batch_size, self.lstm_hidden_dim // 2),\
+                           torch.randn(2 * self.lstm.num_layers, self.batch_size, self.lstm_hidden_dim // 2))
         else:
             self.hidden = (torch.randn(1 * self.lstm.num_layers, self.batch_size, self.lstm_hidden_dim),\
                            torch.randn(1 * self.lstm.num_layers, self.batch_size, self.lstm_hidden_dim))
@@ -344,8 +592,8 @@ class lstm_NN_bigramStats5(nn.Module): # convert bigramstats into categorical em
         self.common_sense_emb.reset_parameters()
     def init_hidden(self):
         if self.bidirectional:
-            self.hidden = (torch.randn(2 * self.lstm.num_layers, self.batch_size, self.hidden_dim // 2),\
-                           torch.randn(2 * self.lstm.num_layers, self.batch_size, self.hidden_dim // 2))
+            self.hidden = (torch.randn(2 * self.lstm.num_layers, self.batch_size, self.lstm_hidden_dim // 2),\
+                           torch.randn(2 * self.lstm.num_layers, self.batch_size, self.lstm_hidden_dim // 2))
         else:
             self.hidden = (torch.randn(1 * self.lstm.num_layers, self.batch_size, self.lstm_hidden_dim),\
                            torch.randn(1 * self.lstm.num_layers, self.batch_size, self.lstm_hidden_dim))
@@ -369,7 +617,7 @@ class lstm_NN_bigramStats5(nn.Module): # convert bigramstats into categorical em
         return output
 
 class lstm_NN_embeddings(nn.Module):
-    def __init__(self, params, emb_cache, lemma_emb_cache, position2ix):
+    def __init__(self, params, emb_cache, lemma_emb_cache, position2ix, bidirectional):
         super(lstm_NN_embeddings, self).__init__()
         self.embedding_dim = params.get('embedding_dim')
         self.lemma_emb_dim = params.get('lemma_emb_dim')
@@ -383,8 +631,13 @@ class lstm_NN_embeddings(nn.Module):
         self.batch_size = params.get('batch_size', 1)
         self.position2ix = position2ix
         self.position_emb = nn.Embedding(len(position2ix), self.position_emb_dim)
-        self.lstm = nn.LSTM(self.embedding_dim + self.position_emb_dim, self.lstm_hidden_dim,
-                            num_layers=1, bidirectional=False)
+        self.bidirectional = bidirectional
+        if self.bidirectional:
+            self.lstm = nn.LSTM(self.embedding_dim + self.position_emb_dim, self.lstm_hidden_dim // 2,\
+                                num_layers=1, bidirectional=True)
+        else:
+            self.lstm = nn.LSTM(self.embedding_dim + self.position_emb_dim, self.lstm_hidden_dim,\
+                                num_layers=1, bidirectional=False)
         self.h_lstm2h_nn = nn.Linear(self.lstm_hidden_dim, self.nn_hidden_dim)
         self.h_nn2o = nn.Linear(self.nn_hidden_dim+self.lemma_emb_dim, self.output_dim)
         self.init_hidden()
@@ -394,8 +647,12 @@ class lstm_NN_embeddings(nn.Module):
         self.h_nn2o.reset_parameters()
         self.position_emb.reset_parameters()
     def init_hidden(self):
-        self.hidden = (torch.randn(1 * self.lstm.num_layers, self.batch_size, self.lstm_hidden_dim),
-                       torch.randn(1 * self.lstm.num_layers, self.batch_size, self.lstm_hidden_dim))
+        if self.bidirectional:
+            self.hidden = (torch.randn(2 * self.lstm.num_layers, self.batch_size, self.lstm_hidden_dim // 2),\
+                           torch.randn(2 * self.lstm.num_layers, self.batch_size, self.lstm_hidden_dim // 2))
+        else:
+            self.hidden = (torch.randn(1 * self.lstm.num_layers, self.batch_size, self.lstm_hidden_dim),\
+                           torch.randn(1 * self.lstm.num_layers, self.batch_size, self.lstm_hidden_dim))
 
     def temprel2embeddingSeq(self, temprel):
         embeddings = self.emb_cache.retrieveEmbeddings(tokList=temprel.token).cuda()

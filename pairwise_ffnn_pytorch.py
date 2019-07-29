@@ -9,6 +9,8 @@ import sys
 import json
 import numpy as np
 
+# torch.set_num_threads(2)
+
 # Usage: python pairwise_ffnn_pytorch.py hidden_ratio emb_dim num_layers training_set
 
 class VerbNet(nn.Module):
@@ -16,6 +18,7 @@ class VerbNet(nn.Module):
         super(VerbNet, self).__init__()
         self.emb_size = emb_size
         self.emb_layer = nn.Embedding(vocab_size, self.emb_size)
+        # self.emb_layer = nn.DataParallel(self.emb_layer)
         self.fc1 = nn.Linear(self.emb_size*2, int(self.emb_size*2*hidden_ratio))
         self.num_layers = num_layers
         if num_layers == 1:
@@ -23,14 +26,21 @@ class VerbNet(nn.Module):
         else:
             self.fc2 = nn.Linear(int(self.emb_size*2*hidden_ratio), int(self.emb_size*hidden_ratio))
             self.fc3 = nn.Linear(int(self.emb_size*hidden_ratio), 1)
+        self.dropout_layer = nn.Dropout(p=0.3)
         self.is_training = True
     def forward(self, x):
         x_emb = self.emb_layer(x)
         fullX = torch.cat((x_emb[:,0,:], x_emb[:,1,:]), dim=1)
-        layer1 = F.relu(self.fc1(F.dropout(fullX, p=0.3, training=self.is_training)))
+        if self.is_training:
+            fullX = self.dropout_layer(fullX)
+            # fullX = F.dropout(fullX, p=0.3, training=self.is_training)
+        layer1 = F.relu(self.fc1(fullX))
         if self.num_layers == 1:
             return torch.sigmoid(self.fc2(layer1))
-        layer2 = F.relu(self.fc2(F.dropout(layer1, p=0.3, training=self.is_training)))
+        if self.is_training:
+            layer1 = self.dropout_layer(layer1)
+            # layer1 = F.dropout(layer1, p=0.3, training=self.is_training)
+        layer2 = F.relu(self.fc2(layer1))
         layer3 = torch.sigmoid(self.fc3(layer2))
         return layer3
     def retrieveEmbeddings(self,x):
@@ -45,11 +55,21 @@ class VerbNet(nn.Module):
 class FfnnTrainer():
     def __init__(self, ffnn, batch_size=1000):
         self.ffnn = ffnn
-        self.optimizer = torch.optim.Adam(ffnn.parameters(), lr=1e-4)
+        self.optimizer = torch.optim.Adam(ffnn.parameters(), lr=0.001)
         self.loss = nn.BCELoss()
         self.suffix = '_'+sys.argv[1]+'_'+sys.argv[2]+'_'+sys.argv[3]+'_'+sys.argv[4]
         self.batch_size = batch_size
-    def train(self, X_train, Y_train, counts_train, X_test, Y_test, counts_test):
+    def flip(self, x, y):
+        x2 = np.copy(x)
+        y2 = np.copy(y)
+        for i in range(x2.shape[0]):
+            if np.random.rand() < 0.5:
+                tmp = x2[i,0]
+                x2[i,0] = x2[i,1]
+                x2[i,1] = tmp
+                y2[i] = 1.0-y2[i]
+        return x2, y2
+    def train(self, X_train_orig, Y_train_orig, counts_train, X_test, Y_test, counts_test):
         loss_value = np.inf
         prev_loss_value = np.inf
         count = 1
@@ -58,11 +78,12 @@ class FfnnTrainer():
         test_recalls = []
         test_precisions = []
         test_losses = []
-        while count <= 30: # and (count < 2 or abs(loss_value-prev_loss_value) > 1):
+        while count <= 15: # and (count < 2 or abs(loss_value-prev_loss_value) > 1):
             prev_loss_value = loss_value
             loss_value = 0
             self.ffnn.is_training = True
             start = time.time()
+            X_train, Y_train = self.flip(X_train_orig, Y_train_orig)
             for i in range(0, X_train.shape[0], batch_size):
                 x = np.int64(X_train[i:min(i+batch_size, X_train.shape[0]),:])
                 c = counts_train[i:min(i+batch_size, X_train.shape[0])]
@@ -82,7 +103,7 @@ class FfnnTrainer():
             end = time.time()
             print(count, loss_value, 'time', end-start)
             train_losses.append(loss_value)
-            if count % 1 == 0:
+            if count % 5 == 0:
                 self.ffnn.is_training = False
                 y_true = []
                 y_pred = []
@@ -119,9 +140,10 @@ class FfnnTrainer():
                     torch.save({'epoch': count,
                                 'model_state_dict': self.ffnn.state_dict(),
                                 'optimizer_state_dict': self.optimizer.state_dict(),
-                                'loss': loss_value}, '/scratch/sanjay/illinois-temporal/embeddings/pairwise_model'+self.suffix+'.pt')
+                                'loss': loss_value}, '/scratch/sanjay/illinois-temporal/embeddings/pairwise_model'+self.suffix+'b.pt')
                 end = time.time()
                 print(count, precision, recall, f1, 'time', end-start)
+                sys.stdout.flush()
             count += 1
 
 if __name__ == '__main__':
@@ -192,6 +214,10 @@ if __name__ == '__main__':
             pair_map[first][second][relation] += int(parts[3])
             if i % 100 == 0:
                 print(i)
+        with open('/shared/preprocessed/sssubra2/temprob_pair_map.json', 'w+') as f:
+            f.write(json.dumps(pair_map)+'\n')
+            f.close()
+        exit()
     else:
         pair_map = json.loads(open('/shared/preprocessed/sssubra2/embeddings/timeline_bigram_counts.json').readlines()[0])
         for v in pair_map:
@@ -223,17 +249,18 @@ if __name__ == '__main__':
     hidden_ratio = float(sys.argv[1])
     emb_size = int(sys.argv[2])
     num_layers = int(sys.argv[3])
-    X_train, X_test, Y_train, Y_test, counts_train, counts_test = train_test_split(X, Y, counts, test_size=0.2)
+    X_train, X_test, Y_train, Y_test, counts_train, counts_test = train_test_split(X, Y, counts, test_size=0.)
     ffnn = VerbNet(len(all_verbs), hidden_ratio, emb_size, num_layers)
     ffnn.cuda()
     batch_size = 1000
     if sys.argv[4] != 'TemProb':
-        batch_size = 500
+        batch_size = 12
     trainer = FfnnTrainer(ffnn, batch_size=batch_size)
     trainer.train(X_train, Y_train, counts_train, X_test, Y_test, counts_test)
     ffnn.is_training = False
     y_true = []
     y_pred = []
+    avg_deviation = 0.0
     for i in range(0, X_test.shape[0], batch_size):
         x = np.int64(X_test[i:min(i+batch_size, X_test.shape[0]),:])
         c = counts_test[i:min(i+batch_size, X_test.shape[0])]
@@ -241,9 +268,12 @@ if __name__ == '__main__':
         y = Y_test[i:min(i+batch_size, X_test.shape[0])]
         y = np.repeat(y, c, axis=0)
         y_true += list(np.int32(y >= 0.5))
-        y_pre = ffnn(torch.from_numpy(x).cuda())
+        y_pre = ffnn(torch.from_numpy(x).cuda()).detach().cpu().numpy()
         y_pred += list(np.int32(y_pre >= 0.5))
+        avg_deviation += np.sum(np.abs(y_pre-y))
     recall = recall_score(y_true, y_pred)
     precision = precision_score(y_true, y_pred)
     f1 = f1_score(y_true, y_pred)
     print('final', precision, recall, f1)
+    avg_deviation /= np.sum(counts_test)
+    print('avg deviation', avg_deviation)

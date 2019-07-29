@@ -3,7 +3,11 @@ import numpy as np
 from allennlp.modules.elmo import Elmo, batch_to_ids
 
 
-
+def confusion2prf(confusion):
+    prec = 1.0 * np.sum([confusion[i][i] for i in range(3)]) / (np.sum(confusion[:,:3]))
+    rec = 1.0 * np.sum([confusion[i][i] for i in range(3)]) / (np.sum(confusion[:3,:]))
+    f1 = 2.0 / (1.0 / prec + 1.0 / rec)
+    return prec,rec,f1
 def categoryFromOutput(output):
     top_n, top_i = output.topk(1)
     category_i = top_i[0].item()
